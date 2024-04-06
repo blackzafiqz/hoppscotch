@@ -10,6 +10,7 @@ import { RTJwtStrategy } from './strategies/rt-jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { GithubStrategy } from './strategies/github.strategy';
 import { MicrosoftStrategy } from './strategies/microsoft.strategy';
+import { OidcStrategy } from './strategies/oidc.strategy';
 import { AuthProvider, authProviderCheck } from './helper';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import {
@@ -17,6 +18,7 @@ import {
   loadInfraConfiguration,
 } from 'src/infra-config/helper';
 import { InfraConfigModule } from 'src/infra-config/infra-config.module';
+
 
 @Module({
   imports: [
@@ -32,7 +34,12 @@ import { InfraConfigModule } from 'src/infra-config/infra-config.module';
     }),
     InfraConfigModule,
   ],
-  providers: [AuthService, JwtStrategy, RTJwtStrategy],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    RTJwtStrategy,
+
+  ],
   controllers: [AuthController],
 })
 export class AuthModule {
@@ -54,6 +61,9 @@ export class AuthModule {
         : []),
       ...(authProviderCheck(AuthProvider.MICROSOFT, allowedAuthProviders)
         ? [MicrosoftStrategy]
+        : []),
+      ...(authProviderCheck(AuthProvider.OIDC, allowedAuthProviders)
+        ? [OidcStrategy]
         : []),
     ];
 
