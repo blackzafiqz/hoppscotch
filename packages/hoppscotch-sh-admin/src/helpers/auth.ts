@@ -195,7 +195,10 @@ export const auth = {
 
     return authQuery.signInWithEmailLink(token, deviceIdentifier);
   },
-
+  signInUserWithOidc: () => {
+    window.location.href = `${import.meta.env.VITE_BACKEND_API_URL
+      }/auth/oidc?redirect_uri=${import.meta.env.VITE_ADMIN_URL}`;
+  },
   performAuthRefresh: async () => {
     const isRefreshSuccess = await refreshToken();
 

@@ -37,6 +37,16 @@ const AuthProviderConfigurations = {
     InfraConfigEnum.MAILER_SMTP_URL,
     InfraConfigEnum.MAILER_ADDRESS_FROM,
   ],
+  [AuthProvider.OIDC]: [
+    InfraConfigEnum.OIDC_AUTH_URL,
+    InfraConfigEnum.OIDC_CALLBACK_URL,
+    InfraConfigEnum.OIDC_CLIENT_ID,
+    InfraConfigEnum.OIDC_CLIENT_SECRET,
+    InfraConfigEnum.OIDC_ISSUER,
+    InfraConfigEnum.OIDC_SCOPE,
+    InfraConfigEnum.OIDC_TOKEN_URL,
+    InfraConfigEnum.OIDC_USERINFO_URL,
+  ],
 };
 
 /**

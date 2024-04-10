@@ -30,7 +30,7 @@ export class InfraConfigService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   // Following fields are not updatable by `infraConfigs` Mutation. Use dedicated mutations for these fields instead.
   EXCLUDE_FROM_UPDATE_CONFIGS = [
@@ -199,6 +199,17 @@ export class InfraConfigService implements OnModuleInit {
         );
       case AuthProvider.EMAIL:
         return configMap.MAILER_SMTP_URL && configMap.MAILER_ADDRESS_FROM;
+      case AuthProvider.OIDC:
+        return (
+          configMap.OIDC_CLIENT_ID &&
+          configMap.OIDC_CLIENT_SECRET &&
+          configMap.OIDC_CALLBACK_URL &&
+          configMap.OIDC_SCOPE &&
+          configMap.OIDC_ISSUER &&
+          configMap.OIDC_AUTH_URL &&
+          configMap.OIDC_TOKEN_URL &&
+          configMap.OIDC_USERINFO_URL
+        );
       default:
         return false;
     }

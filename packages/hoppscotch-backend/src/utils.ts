@@ -26,6 +26,7 @@ import { RESTError } from './types/RESTError';
  */
 export function throwErr(errMessage: string): never {
   throw new Error(errMessage);
+
 }
 
 /**
@@ -57,11 +58,11 @@ export const trace = <T>(val: T) => {
  */
 export const namedTrace =
   <T>(name: string, transform?: (val: T) => unknown) =>
-  (val: T) => {
-    console.log(`${name}:`, transform ? transform(val) : val);
+    (val: T) => {
+      console.log(`${name}:`, transform ? transform(val) : val);
 
-    return val;
-  };
+      return val;
+    };
 
 /**
  * Returns the list of required roles annotated on a GQL Operation
@@ -251,12 +252,12 @@ export function checkEnvironmentAuthProvider(
   }
 }
 
-/**
+/** c
  * Adds escape backslashes to the input so that it can be used inside
  * SQL LIKE/ILIKE queries. Inspired by PHP's `mysql_real_escape_string`
  * function.
  *
- * Eg. "100%" -> "100\\%"
+ * Eg. "100%" -> "100\\%"http://127.0.0.1:4554
  *
  * Source: https://stackoverflow.com/a/32648526
  */

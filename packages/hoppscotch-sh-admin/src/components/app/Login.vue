@@ -194,7 +194,6 @@ const signingInWithOidc = ref(false);
 const mode = ref('sign-in');
 const nonAdminUser = ref(false);
 
-const allowedAuthProviders = ref<string[]>([]);
 
 onMounted(async () => {
   const user = auth.getCurrentUser();
@@ -234,7 +233,7 @@ async function signInWithOidc() {
   signingInWithOidc.value = true;
 
   try {
-    await auth.signInUserWithOidc();
+    auth.signInUserWithOidc();
   } catch (e) {
     console.error(e);
     toast.error(`Failed to sign in with OIDC`);
