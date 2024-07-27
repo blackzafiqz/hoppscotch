@@ -35,8 +35,8 @@
         />
       </div>
     </div>
-    <div class="h-full">
-      <div ref="rawResponse" class="flex flex-1 flex-col"></div>
+    <div class="h-full relative overflow-auto flex flex-col flex-1">
+      <div ref="rawResponse" class="absolute inset-0"></div>
     </div>
   </div>
 </template>
@@ -121,9 +121,3 @@ useCodemirror(
 defineActionHandler("response.file.download", () => downloadResponse())
 defineActionHandler("response.copy", () => copyResponse())
 </script>
-
-<style lang="scss" scoped>
-:deep(.cm-panels) {
-  @apply top-lowerTertiaryStickyFold #{!important};
-}
-</style>

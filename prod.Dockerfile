@@ -1,8 +1,11 @@
-FROM node:18-alpine3.19 as base_builder
+FROM node:20-alpine3.19 as base_builder
 
 WORKDIR /usr/src/app
 
 ENV HOPP_ALLOW_RUNTIME_ENV=true
+
+# Required by @hoppscotch/js-sandbox to build `isolated-vm`
+RUN apk add python3 make g++
 
 RUN npm install -g pnpm
 COPY pnpm-lock.yaml .

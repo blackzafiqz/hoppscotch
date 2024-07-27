@@ -1,9 +1,8 @@
-import { pluck, distinctUntilChanged } from "rxjs/operators"
 import { cloneDeep, defaultsDeep, has } from "lodash-es"
 import { Observable } from "rxjs"
-
-import DispatchingStore, { defineDispatchers } from "./DispatchingStore"
+import { distinctUntilChanged, pluck } from "rxjs/operators"
 import type { KeysMatching } from "~/types/ts-utils"
+import DispatchingStore, { defineDispatchers } from "./DispatchingStore"
 
 export const HoppBgColors = ["system", "light", "dark", "black"] as const
 
@@ -65,6 +64,8 @@ export type SettingsDef = {
   SIDEBAR: boolean
   SIDEBAR_ON_LEFT: boolean
   COLUMN_LAYOUT: boolean
+
+  HAS_OPENED_SPOTLIGHT: boolean
 }
 
 export const getDefaultSettings = (): SettingsDef => ({
@@ -91,7 +92,8 @@ export const getDefaultSettings = (): SettingsDef => ({
     cookie: true,
   },
 
-  CURRENT_INTERCEPTOR_ID: "browser", // TODO: Allow the platform definition to take this place
+  // Set empty because interceptor module will set the default value
+  CURRENT_INTERCEPTOR_ID: "",
 
   // TODO: Interceptor related settings should move under the interceptor systems
   PROXY_URL: "https://proxy.hoppscotch.io/",
@@ -109,6 +111,8 @@ export const getDefaultSettings = (): SettingsDef => ({
   SIDEBAR: true,
   SIDEBAR_ON_LEFT: false,
   COLUMN_LAYOUT: true,
+
+  HAS_OPENED_SPOTLIGHT: false,
 })
 
 type ApplySettingPayload = {

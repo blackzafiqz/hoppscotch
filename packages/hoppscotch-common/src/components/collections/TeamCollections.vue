@@ -129,6 +129,7 @@
                     })
               }
             "
+            @run-collection="emit('run-collection', $event)"
             @click="
               () => {
                 handleCollectionClick({
@@ -218,6 +219,7 @@
                     })
               }
             "
+            @run-collection="emit('run-collection', $event)"
             @click="
               () => {
                 handleCollectionClick({
@@ -387,7 +389,6 @@ import IconPlus from "~icons/lucide/plus"
 import IconHelpCircle from "~icons/lucide/help-circle"
 import IconImport from "~icons/lucide/folder-down"
 import { computed, PropType, Ref, toRef } from "vue"
-import { GetMyTeamsQuery } from "~/helpers/backend/graphql"
 import { useI18n } from "@composables/i18n"
 import { useColorMode } from "@composables/theming"
 import { TeamCollection } from "~/helpers/teams/TeamCollection"
@@ -400,17 +401,16 @@ import * as O from "fp-ts/Option"
 import { Picked } from "~/helpers/types/HoppPicked.js"
 import { RESTTabService } from "~/services/tab/rest"
 import { useService } from "dioc/vue"
+import { TeamWorkspace } from "~/services/workspace.service"
 
 const t = useI18n()
 const colorMode = useColorMode()
 const tabs = useService(RESTTabService)
 
-type SelectedTeam = GetMyTeamsQuery["myTeams"][number] | undefined
-
 type CollectionType =
   | {
       type: "team-collections"
-      selectedTeam: SelectedTeam
+      selectedTeam: TeamWorkspace
     }
   | { type: "my-collections"; selectedTeam: undefined }
 
@@ -588,6 +588,7 @@ const emit = defineEmits<{
   (event: "expand-team-collection", payload: string): void
   (event: "display-modal-add"): void
   (event: "display-modal-import-export"): void
+  (event: "run-collection", collectionID: string): void
 }>()
 
 const getPath = (path: string) => {
@@ -614,7 +615,7 @@ const hasNoTeamAccess = computed(
   () =>
     props.collectionsType.type === "team-collections" &&
     (props.collectionsType.selectedTeam === undefined ||
-      props.collectionsType.selectedTeam.myRole === "VIEWER")
+      props.collectionsType.selectedTeam.role === "VIEWER")
 )
 
 const isSelected = ({

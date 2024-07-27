@@ -42,6 +42,8 @@ const user: AuthUser = {
   currentRESTSession: {},
   currentGQLSession: {},
   refreshToken: 'hbfvdkhjbvkdvdfjvbnkhjb',
+  lastLoggedOn: currentTime,
+  lastActiveOn: currentTime,
   createdOn: currentTime,
 };
 
@@ -54,6 +56,8 @@ const adminUser: AuthUser = {
   currentRESTSession: {},
   currentGQLSession: {},
   refreshToken: 'hbfvdkhjbvkdvdfjvbnkhjb',
+  lastLoggedOn: currentTime,
+  lastActiveOn: currentTime,
   createdOn: currentTime,
 };
 
@@ -67,6 +71,8 @@ const users: AuthUser[] = [
     currentRESTSession: {},
     currentGQLSession: {},
     refreshToken: 'hbfvdkhjbvkdvdfjvbnkhjb',
+    lastLoggedOn: currentTime,
+    lastActiveOn: currentTime,
     createdOn: currentTime,
   },
   {
@@ -78,6 +84,8 @@ const users: AuthUser[] = [
     currentRESTSession: {},
     currentGQLSession: {},
     refreshToken: 'hbfvdkhjbvkdvdfjvbnkhjb',
+    lastLoggedOn: currentTime,
+    lastActiveOn: currentTime,
     createdOn: currentTime,
   },
   {
@@ -89,6 +97,8 @@ const users: AuthUser[] = [
     currentRESTSession: {},
     currentGQLSession: {},
     refreshToken: 'hbfvdkhjbvkdvdfjvbnkhjb',
+    lastLoggedOn: currentTime,
+    lastActiveOn: currentTime,
     createdOn: currentTime,
   },
 ];
@@ -103,6 +113,8 @@ const adminUsers: AuthUser[] = [
     currentRESTSession: {},
     currentGQLSession: {},
     refreshToken: 'hbfvdkhjbvkdvdfjvbnkhjb',
+    lastLoggedOn: currentTime,
+    lastActiveOn: currentTime,
     createdOn: currentTime,
   },
   {
@@ -114,6 +126,8 @@ const adminUsers: AuthUser[] = [
     currentRESTSession: {},
     currentGQLSession: {},
     refreshToken: 'hbfvdkhjbvkdvdfjvbnkhjb',
+    lastLoggedOn: currentTime,
+    lastActiveOn: currentTime,
     createdOn: currentTime,
   },
   {
@@ -125,6 +139,8 @@ const adminUsers: AuthUser[] = [
     currentRESTSession: {},
     currentGQLSession: {},
     refreshToken: 'hbfvdkhjbvkdvdfjvbnkhjb',
+    lastLoggedOn: currentTime,
+    lastActiveOn: currentTime,
     createdOn: currentTime,
   },
 ];
@@ -149,7 +165,7 @@ beforeEach(() => {
 describe('UserService', () => {
   describe('findUserByEmail', () => {
     test('should successfully return a valid user given a valid email', async () => {
-      mockPrisma.user.findUniqueOrThrow.mockResolvedValueOnce(user);
+      mockPrisma.user.findFirst.mockResolvedValueOnce(user);
 
       const result = await userService.findUserByEmail(
         'dwight@dundermifflin.com',
@@ -158,7 +174,7 @@ describe('UserService', () => {
     });
 
     test('should return a null user given a invalid email', async () => {
-      mockPrisma.user.findUniqueOrThrow.mockRejectedValueOnce('NotFoundError');
+      mockPrisma.user.findFirst.mockResolvedValueOnce(null);
 
       const result = await userService.findUserByEmail('jim@dundermifflin.com');
       expect(result).resolves.toBeNone;
@@ -492,6 +508,26 @@ describe('UserService', () => {
         newDisplayName,
       );
       expect(result).toEqualLeft(USER_SHORT_DISPLAY_NAME);
+    });
+  });
+
+  describe('updateUserLastLoggedOn', () => {
+    test('should resolve right and update user last logged on', async () => {
+      const currentTime = new Date();
+      mockPrisma.user.update.mockResolvedValueOnce({
+        ...user,
+        lastLoggedOn: currentTime,
+      });
+
+      const result = await userService.updateUserLastLoggedOn(user.uid);
+      expect(result).toEqualRight(true);
+    });
+
+    test('should resolve left and error when invalid user uid is passed', async () => {
+      mockPrisma.user.update.mockRejectedValueOnce('NotFoundError');
+
+      const result = await userService.updateUserLastLoggedOn('invalidUserUid');
+      expect(result).toEqualLeft(USER_NOT_FOUND);
     });
   });
 

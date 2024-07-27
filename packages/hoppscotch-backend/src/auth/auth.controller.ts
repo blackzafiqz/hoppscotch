@@ -7,6 +7,7 @@ import {
   Request,
   Res,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignInMagicDto } from './dto/signin-magic.dto';
@@ -28,6 +29,7 @@ import { OidcSSOGuard } from './guards/oidc.guard';
 import { AUTH_PROVIDER_NOT_SPECIFIED } from 'src/errors';
 import { ConfigService } from '@nestjs/config';
 import { throwHTTPErr } from 'src/utils';
+import { UserLastLoginInterceptor } from 'src/interceptors/user-last-login.interceptor';
 
 
 @UseGuards(ThrottlerBehindProxyGuard)
@@ -112,6 +114,7 @@ export class AuthController {
   @Get('google/callback')
   @SkipThrottle()
   @UseGuards(GoogleSSOGuard)
+  @UseInterceptors(UserLastLoginInterceptor)
   async googleAuthRedirect(@Request() req, @Res() res) {
     const authTokens = await this.authService.generateAuthTokens(req.user.uid);
     if (E.isLeft(authTokens)) throwHTTPErr(authTokens.left);
@@ -162,6 +165,7 @@ export class AuthController {
   @Get('github/callback')
   @SkipThrottle()
   @UseGuards(GithubSSOGuard)
+  @UseInterceptors(UserLastLoginInterceptor)
   async githubAuthRedirect(@Request() req, @Res() res) {
     const authTokens = await this.authService.generateAuthTokens(req.user.uid);
     if (E.isLeft(authTokens)) throwHTTPErr(authTokens.left);
@@ -187,6 +191,7 @@ export class AuthController {
   @Get('microsoft/callback')
   @SkipThrottle()
   @UseGuards(MicrosoftSSOGuard)
+  @UseInterceptors(UserLastLoginInterceptor)
   async microsoftAuthRedirect(@Request() req, @Res() res) {
     const authTokens = await this.authService.generateAuthTokens(req.user.uid);
     if (E.isLeft(authTokens)) throwHTTPErr(authTokens.left);

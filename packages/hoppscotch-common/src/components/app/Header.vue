@@ -21,19 +21,7 @@
         </div>
       </div>
       <div class="col-span-1 flex items-center justify-between space-x-2">
-        <button
-          class="flex h-full flex-1 cursor-text items-center justify-between self-stretch rounded border border-dividerDark bg-primaryDark px-2 text-secondaryLight transition hover:border-dividerDark hover:bg-primaryLight hover:text-secondary focus-visible:border-dividerDark focus-visible:bg-primaryLight focus-visible:text-secondary"
-          @click="invokeAction('modals.search.toggle', undefined, 'mouseclick')"
-        >
-          <span class="inline-flex flex-1 items-center">
-            <icon-lucide-search class="svg-icons mr-2" />
-            {{ t("app.search") }}
-          </span>
-          <span class="flex space-x-1">
-            <kbd class="shortcut-key">{{ getPlatformSpecialKey() }}</kbd>
-            <kbd class="shortcut-key">K</kbd>
-          </span>
-        </button>
+        <AppSpotlightSearch />
       </div>
       <div class="col-span-2 flex items-center justify-between space-x-2">
         <div class="flex">
@@ -55,12 +43,19 @@
             @click="invokeAction('modals.support.toggle')"
           />
         </div>
-        <div class="flex">
+        <div
+          class="flex"
+          :class="{
+            'flex-row-reverse gap-2':
+              workspaceSelectorFlagEnabled && !currentUser,
+          }"
+        >
           <div
             v-if="currentUser === null"
             class="inline-flex items-center space-x-2"
           >
             <HoppButtonSecondary
+              v-if="!workspaceSelectorFlagEnabled"
               :icon="IconUploadCloud"
               :label="t('header.save_workspace')"
               class="!focus-visible:text-emerald-600 !hover:text-emerald-600 hidden h-8 border border-emerald-600/25 bg-emerald-500/10 !text-emerald-500 hover:border-emerald-600/20 hover:bg-emerald-600/20 focus-visible:border-emerald-600/20 focus-visible:bg-emerald-600/20 md:flex"
@@ -72,18 +67,22 @@
               @click="invokeAction('modals.login.toggle')"
             />
           </div>
-          <div v-else class="inline-flex items-center space-x-2">
-            <TeamsMemberStack
-              v-if="
-                workspace.type === 'team' &&
-                selectedTeam &&
-                selectedTeam.teamMembers.length > 1
-              "
-              :team-members="selectedTeam.teamMembers"
-              show-count
-              class="mx-2"
-              @handle-click="handleTeamEdit()"
-            />
+          <TeamsMemberStack
+            v-else-if="
+              currentUser !== null &&
+              workspace.type === 'team' &&
+              selectedTeam &&
+              selectedTeam.teamMembers.length > 1
+            "
+            :team-members="selectedTeam.teamMembers"
+            show-count
+            class="mx-2"
+            @handle-click="handleTeamEdit()"
+          />
+          <div
+            v-if="workspaceSelectorFlagEnabled || currentUser"
+            class="inline-flex items-center space-x-2"
+          >
             <div
               class="flex h-8 divide-x divide-emerald-600/25 rounded border border-emerald-600/25 bg-emerald-500/10 focus-within:divide-emerald-600/20 focus-within:border-emerald-600/20 focus-within:bg-emerald-600/20 hover:divide-emerald-600/20 hover:border-emerald-600/20 hover:bg-emerald-600/20"
             >
@@ -96,6 +95,7 @@
               />
               <HoppButtonSecondary
                 v-if="
+                  currentUser &&
                   workspace.type === 'team' &&
                   selectedTeam &&
                   selectedTeam?.myRole === 'OWNER'
@@ -136,7 +136,7 @@
                 </div>
               </template>
             </tippy>
-            <span class="px-2">
+            <span v-if="currentUser" class="px-2">
               <tippy
                 interactive
                 trigger="click"
@@ -214,7 +214,7 @@
     <AppBanner
       v-if="bannerContent"
       :banner="bannerContent"
-      @dismiss="dismissOfflineBanner"
+      @dismiss="dismissBanner"
     />
     <TeamsModal :show="showTeamsModal" @hide-modal="showTeamsModal = false" />
     <TeamsInvite
@@ -244,15 +244,22 @@
 import { useI18n } from "@composables/i18n"
 import { useReadonlyStream } from "@composables/stream"
 import { defineActionHandler, invokeAction } from "@helpers/actions"
-import { WorkspaceService } from "~/services/workspace.service"
-import { useService } from "dioc/vue"
 import { installPWA, pwaDefferedPrompt } from "@modules/pwa"
 import { breakpointsTailwind, useBreakpoints, useNetwork } from "@vueuse/core"
+import { useService } from "dioc/vue"
+import * as TE from "fp-ts/TaskEither"
+import { pipe } from "fp-ts/function"
 import { computed, reactive, ref, watch } from "vue"
 import { useToast } from "~/composables/toast"
 import { GetMyTeamsQuery, TeamMemberRole } from "~/helpers/backend/graphql"
-import { getPlatformSpecialKey } from "~/helpers/platformutils"
+import { deleteTeam as backendDeleteTeam } from "~/helpers/backend/mutations/Team"
 import { platform } from "~/platform"
+import {
+  BANNER_PRIORITY_LOW,
+  BannerContent,
+  BannerService,
+} from "~/services/banner.service"
+import { WorkspaceService } from "~/services/workspace.service"
 import IconDownload from "~icons/lucide/download"
 import IconLifeBuoy from "~icons/lucide/life-buoy"
 import IconSettings from "~icons/lucide/settings"
@@ -260,17 +267,16 @@ import IconUploadCloud from "~icons/lucide/upload-cloud"
 import IconUser from "~icons/lucide/user"
 import IconUserPlus from "~icons/lucide/user-plus"
 import IconUsers from "~icons/lucide/users"
-import { pipe } from "fp-ts/function"
-import * as TE from "fp-ts/TaskEither"
-import { deleteTeam as backendDeleteTeam } from "~/helpers/backend/mutations/Team"
-import {
-  BannerService,
-  BannerContent,
-  BANNER_PRIORITY_HIGH,
-} from "~/services/banner.service"
 
 const t = useI18n()
 const toast = useToast()
+
+/**
+ * Feature flag to enable the workspace selector login conversion
+ */
+const workspaceSelectorFlagEnabled = computed(
+  () => !!platform.platformFeatureFlags.workspaceSwitcherLogin?.value
+)
 
 /**
  * Once the PWA code is initialized, this holds a method
@@ -287,31 +293,38 @@ const mdAndLarger = breakpoints.greater("md")
 
 const banner = useService(BannerService)
 const bannerContent = computed(() => banner.content.value?.content)
-let bannerID: number | null = null
+let offlineBannerID: number | null = null
 
 const offlineBanner: BannerContent = {
   type: "warning",
   text: (t) => t("helpers.offline"),
   alternateText: (t) => t("helpers.offline_short"),
-  score: BANNER_PRIORITY_HIGH,
+  score: BANNER_PRIORITY_LOW,
   dismissible: true,
 }
 
+// Show the offline banner if the app is offline
 const network = reactive(useNetwork())
 const isOnline = computed(() => network.isOnline)
 
-// Show the offline banner if the user is offline
 watch(isOnline, () => {
   if (!isOnline.value) {
-    bannerID = banner.showBanner(offlineBanner)
+    offlineBannerID = banner.showBanner(offlineBanner)
     return
   }
-  if (banner.content && bannerID) {
-    banner.removeBanner(bannerID)
+  if (banner.content && offlineBannerID) {
+    banner.removeBanner(offlineBannerID)
   }
 })
 
-const dismissOfflineBanner = () => banner.removeBanner(bannerID!)
+const dismissBanner = () => {
+  if (banner.content.value) {
+    banner.removeBanner(banner.content.value.id)
+  } else if (offlineBannerID) {
+    banner.removeBanner(offlineBannerID)
+    offlineBannerID = null
+  }
+}
 
 const currentUser = useReadonlyStream(
   platform.auth.getProbableUserStream(),
@@ -393,6 +406,8 @@ const inviteTeam = (team: { name: string }, teamID: string) => {
 
 // Show the workspace selected team invite modal if the user is an owner of the team else show the default invite modal
 const handleInvite = () => {
+  if (!currentUser.value) return invokeAction("modals.login.toggle")
+
   if (
     workspace.value.type === "team" &&
     workspace.value.teamID &&

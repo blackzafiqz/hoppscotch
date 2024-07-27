@@ -5,13 +5,24 @@ import { useStreamStatic } from "~/composables/stream"
 import TeamListAdapter from "~/helpers/teams/TeamListAdapter"
 import { platform } from "~/platform"
 import { min } from "lodash-es"
+import { TeamMemberRole } from "~/helpers/backend/graphql"
 
 /**
  * Defines a workspace and its information
  */
-export type Workspace =
-  | { type: "personal" }
-  | { type: "team"; teamID: string; teamName: string }
+
+export type PersonalWorkspace = {
+  type: "personal"
+}
+
+export type TeamWorkspace = {
+  type: "team"
+  teamID: string
+  teamName: string
+  role: TeamMemberRole | null | undefined
+}
+
+export type Workspace = PersonalWorkspace | TeamWorkspace
 
 export type WorkspaceServiceEvent = {
   type: "managed-team-list-adapter-polled"
@@ -48,8 +59,7 @@ export class WorkspaceService extends Service<WorkspaceServiceEvent> {
       -1
   )
 
-  constructor() {
-    super()
+  override onServiceInit() {
     // Dispose the managed team list adapter when the user logs out
     // and initialize it when the user logs in
     watch(

@@ -66,6 +66,8 @@ const SettingsDefSchema = z.object({
       cookie: z.boolean().catch(true),
     })
   ),
+
+  HAS_OPENED_SPOTLIGHT: z.optional(z.boolean()),
 })
 
 // Common properties shared across REST & GQL collections
@@ -398,7 +400,7 @@ const HoppTestResultSchema = z
                 (x) => "secret" in x && !x.secret
               ).and(
                 z.object({
-                  previousValue: z.string(),
+                  previousValue: z.optional(z.string()),
                 })
               )
             ),
@@ -413,7 +415,7 @@ const HoppTestResultSchema = z
                 (x) => "secret" in x && !x.secret
               ).and(
                 z.object({
-                  previousValue: z.string(),
+                  previousValue: z.optional(z.string()),
                 })
               )
             ),

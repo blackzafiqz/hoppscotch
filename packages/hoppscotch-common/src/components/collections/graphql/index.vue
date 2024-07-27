@@ -192,6 +192,7 @@ import { PersistenceService } from "~/services/persistence"
 import { PersistedOAuthConfig } from "~/services/oauth/oauth.service"
 import { GQLOptionTabs } from "~/components/graphql/RequestOptions.vue"
 import { EditingProperties } from "../Properties.vue"
+import { defineActionHandler } from "~/helpers/actions"
 
 const t = useI18n()
 const toast = useToast()
@@ -199,7 +200,7 @@ const toast = useToast()
 defineProps<{
   // Whether to activate the ability to pick items (activates 'select' events)
   saveRequest: boolean
-  picked: Picked
+  picked: Picked | null
 }>()
 
 const collections = useReadonlyStream(graphqlCollections$, [], "deep")
@@ -676,4 +677,11 @@ const resetSelectedData = () => {
   editingRequest.value = null
   editingRequestIndex.value = null
 }
+
+defineActionHandler("collection.new", () => {
+  displayModalAdd(true)
+})
+defineActionHandler("modals.collection.import", () => {
+  displayModalImportExport(true)
+})
 </script>

@@ -17,26 +17,32 @@ import { useMutation } from '@urql/vue';
 import { onMounted, ref } from 'vue';
 import { useI18n } from '~/composables/i18n';
 import { useToast } from '~/composables/toast';
-import { Config, useConfigHandler } from '~/composables/useConfigHandler';
+import { useConfigHandler } from '~/composables/useConfigHandler';
 import {
   EnableAndDisableSsoDocument,
   ResetInfraConfigsDocument,
-  UpdateInfraConfigsDocument,
   ToggleAnalyticsCollectionDocument,
+  ToggleSmtpDocument,
+  UpdateInfraConfigsDocument,
 } from '~/helpers/backend/graphql';
+import { ServerConfigs } from '~/helpers/configs';
 
 const t = useI18n();
 const toast = useToast();
 
 const props = withDefaults(
   defineProps<{
-    workingConfigs?: Config;
+    workingConfigs?: ServerConfigs;
     reset?: boolean;
   }>(),
   {
     reset: false,
   }
 );
+
+const emit = defineEmits<{
+  (e: 'mutationFailure'): void;
+}>();
 
 // Mutations to update or reset server configurations and audit logs
 const resetInfraConfigsMutation = useMutation(ResetInfraConfigsDocument);
@@ -47,6 +53,7 @@ const updateAllowedAuthProviderMutation = useMutation(
 const toggleDataSharingMutation = useMutation(
   ToggleAnalyticsCollectionDocument
 );
+const toggleSMTPMutation = useMutation(ToggleSmtpDocument);
 
 // Mutation handlers
 const {
@@ -54,6 +61,7 @@ const {
   updateAuthProvider,
   resetInfraConfigs,
   updateDataSharingConfigs,
+  toggleSMTPConfigs,
 } = useConfigHandler(props.workingConfigs);
 
 // Call relevant mutations on component mount and initiate server restart
@@ -72,28 +80,46 @@ const startCountdown = () => {
   }, 1000);
 };
 
+const triggerComponentUnMount = () => emit('mutationFailure');
+
 // Call relevant mutations on component mount and initiate server restart
 onMounted(async () => {
-  let success = true;
-
   if (props.reset) {
-    success = await resetInfraConfigs(resetInfraConfigsMutation);
-    if (!success) return;
+    const resetInfraConfigsResult = await resetInfraConfigs(
+      resetInfraConfigsMutation
+    );
+
+    if (!resetInfraConfigsResult) {
+      return triggerComponentUnMount();
+    }
   } else {
     const infraResult = await updateInfraConfigs(updateInfraConfigsMutation);
 
-    if (!infraResult) return;
+    if (!infraResult) {
+      return triggerComponentUnMount();
+    }
 
     const authResult = await updateAuthProvider(
       updateAllowedAuthProviderMutation
     );
-    if (!authResult) return;
+
+    if (!authResult) {
+      return triggerComponentUnMount();
+    }
 
     const dataSharingResult = await updateDataSharingConfigs(
       toggleDataSharingMutation
     );
 
-    if (!dataSharingResult) return;
+    if (!dataSharingResult) {
+      return triggerComponentUnMount();
+    }
+
+    const smtpResult = await toggleSMTPConfigs(toggleSMTPMutation);
+
+    if (!smtpResult) {
+      return triggerComponentUnMount();
+    }
   }
 
   restart.value = true;

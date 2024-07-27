@@ -33,10 +33,17 @@ const AuthProviderConfigurations = {
     InfraConfigEnum.MICROSOFT_SCOPE,
     InfraConfigEnum.MICROSOFT_TENANT,
   ],
-  [AuthProvider.EMAIL]: [
-    InfraConfigEnum.MAILER_SMTP_URL,
-    InfraConfigEnum.MAILER_ADDRESS_FROM,
-  ],
+  [AuthProvider.EMAIL]: !!process.env.MAILER_USE_CUSTOM_CONFIGS
+    ? [
+        InfraConfigEnum.MAILER_SMTP_HOST,
+        InfraConfigEnum.MAILER_SMTP_PORT,
+        InfraConfigEnum.MAILER_SMTP_SECURE,
+        InfraConfigEnum.MAILER_SMTP_USER,
+        InfraConfigEnum.MAILER_SMTP_PASSWORD,
+        InfraConfigEnum.MAILER_TLS_REJECT_UNAUTHORIZED,
+        InfraConfigEnum.MAILER_ADDRESS_FROM,
+      ]
+    : [InfraConfigEnum.MAILER_SMTP_URL, InfraConfigEnum.MAILER_ADDRESS_FROM],
   [AuthProvider.OIDC]: [
     InfraConfigEnum.OIDC_AUTH_URL,
     InfraConfigEnum.OIDC_CALLBACK_URL,
@@ -86,12 +93,44 @@ export async function getDefaultInfraConfigs(): Promise<
   // Prepare rows for 'infra_config' table with default values (from .env) for each 'name'
   const infraConfigDefaultObjs: { name: InfraConfigEnum; value: string }[] = [
     {
+      name: InfraConfigEnum.MAILER_SMTP_ENABLE,
+      value: process.env.MAILER_SMTP_ENABLE ?? 'true',
+    },
+    {
+      name: InfraConfigEnum.MAILER_USE_CUSTOM_CONFIGS,
+      value: process.env.MAILER_USE_CUSTOM_CONFIGS ?? 'false',
+    },
+    {
       name: InfraConfigEnum.MAILER_SMTP_URL,
       value: process.env.MAILER_SMTP_URL,
     },
     {
       name: InfraConfigEnum.MAILER_ADDRESS_FROM,
       value: process.env.MAILER_ADDRESS_FROM,
+    },
+    {
+      name: InfraConfigEnum.MAILER_SMTP_HOST,
+      value: process.env.MAILER_SMTP_HOST,
+    },
+    {
+      name: InfraConfigEnum.MAILER_SMTP_PORT,
+      value: process.env.MAILER_SMTP_PORT,
+    },
+    {
+      name: InfraConfigEnum.MAILER_SMTP_SECURE,
+      value: process.env.MAILER_SMTP_SECURE,
+    },
+    {
+      name: InfraConfigEnum.MAILER_SMTP_USER,
+      value: process.env.MAILER_SMTP_USER,
+    },
+    {
+      name: InfraConfigEnum.MAILER_SMTP_PASSWORD,
+      value: process.env.MAILER_SMTP_PASSWORD,
+    },
+    {
+      name: InfraConfigEnum.MAILER_TLS_REJECT_UNAUTHORIZED,
+      value: process.env.MAILER_TLS_REJECT_UNAUTHORIZED,
     },
     {
       name: InfraConfigEnum.GOOGLE_CLIENT_ID,
@@ -167,18 +206,32 @@ export async function getDefaultInfraConfigs(): Promise<
 }
 
 /**
+ * Get the missing entries in the 'infra_config' table
+ * @returns Array of InfraConfig
+ */
+export async function getMissingInfraConfigEntries() {
+  const prisma = new PrismaService();
+  const [dbInfraConfigs, infraConfigDefaultObjs] = await Promise.all([
+    prisma.infraConfig.findMany(),
+    getDefaultInfraConfigs(),
+  ]);
+
+  const missingEntries = infraConfigDefaultObjs.filter(
+    (config) =>
+      !dbInfraConfigs.some((dbConfig) => dbConfig.name === config.name),
+  );
+
+  return missingEntries;
+}
+
+/**
  * Verify if 'infra_config' table is loaded with all entries
  * @returns boolean
  */
 export async function isInfraConfigTablePopulated(): Promise<boolean> {
   const prisma = new PrismaService();
   try {
-    const dbInfraConfigs = await prisma.infraConfig.findMany();
-    const infraConfigDefaultObjs = await getDefaultInfraConfigs();
-
-    const propsRemainingToInsert = infraConfigDefaultObjs.filter(
-      (p) => !dbInfraConfigs.find((e) => e.name === p.name),
-    );
+    const propsRemainingToInsert = await getMissingInfraConfigEntries();
 
     if (propsRemainingToInsert.length > 0) {
       console.log(

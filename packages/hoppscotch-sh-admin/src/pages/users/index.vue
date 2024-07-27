@@ -62,10 +62,10 @@
             </div>
           </template>
           <template #head>
-            <th class="px-6 py-2">{{ t('users.id') }}</th>
             <th class="px-6 py-2">{{ t('users.name') }}</th>
             <th class="px-6 py-2">{{ t('users.email') }}</th>
-            <th class="px-6 py-2">{{ t('users.date') }}</th>
+            <th class="px-6 py-2">{{ t('users.created_on') }}</th>
+            <th class="px-6 py-2">{{ t('users.last_active_on') }}</th>
             <!-- Empty header for Action Button -->
             <th class="w-20 px-6 py-2"></th>
           </template>
@@ -79,10 +79,6 @@
           </template>
 
           <template #body="{ row: user }">
-            <td class="py-2 px-7 max-w-[8rem] truncate">
-              {{ user.uid }}
-            </td>
-
             <td class="py-2 px-7">
               <div class="flex items-center space-x-2">
                 <span>
@@ -108,6 +104,8 @@
                 {{ getCreatedTime(user.createdOn) }}
               </div>
             </td>
+
+            <td class="py-2 px-7">{{ getLastActiveOn(user.lastActiveOn) }}</td>
 
             <td @click.stop class="flex justify-end w-20">
               <div class="mt-2 mr-5">
@@ -174,18 +172,21 @@
               class="py-4 border-divider rounded-r-none bg-emerald-800 text-secondaryDark"
             />
             <HoppButtonSecondary
+              v-if="areNonAdminsSelected"
               :icon="IconUserCheck"
               :label="t('users.make_admin')"
               class="py-4 border-divider border-r-1 rounded-none hover:bg-emerald-600"
               @click="confirmUsersToAdmin = true"
             />
             <HoppButtonSecondary
+              v-if="areAdminsSelected"
               :icon="IconUserMinus"
               :label="t('users.remove_admin_status')"
               class="py-4 border-divider border-r-1 rounded-none hover:bg-orange-500"
               @click="confirmAdminsToUsers = true"
             />
             <HoppButtonSecondary
+              v-if="areNonAdminsSelected"
               :icon="IconTrash"
               :label="t('users.delete_users')"
               class="py-4 border-divider rounded-none hover:bg-red-500"
@@ -203,9 +204,11 @@
     </div>
 
     <UsersInviteModal
-      :show="showInviteUserModal"
+      v-if="showInviteUserModal"
+      :smtp-enabled="smtpEnabled"
       @hide-modal="showInviteUserModal = false"
       @send-invite="sendInvite"
+      @copy-invite-link="copyInviteLink"
     />
     <HoppSmartConfirmModal
       :show="confirmUsersToAdmin"
@@ -242,6 +245,7 @@
 
 <script setup lang="ts">
 import { useMutation, useQuery } from '@urql/vue';
+import { useTimeAgo } from '@vueuse/core';
 import { format } from 'date-fns';
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -251,6 +255,7 @@ import { usePagedQuery } from '~/composables/usePagedQuery';
 import {
   DemoteUsersByAdminDocument,
   InviteNewUserDocument,
+  IsSmtpEnabledDocument,
   MakeUsersAdminDocument,
   MetricsDocument,
   RemoveUsersByAdminDocument,
@@ -258,11 +263,9 @@ import {
   UsersListQuery,
   UsersListV2Document,
 } from '~/helpers/backend/graphql';
-import {
-  ONLY_ONE_ADMIN_ACCOUNT_FOUND,
-  USER_ALREADY_INVITED,
-} from '~/helpers/errors';
+import { getCompiledErrorMessage } from '~/helpers/errors';
 import { handleUserDeletion } from '~/helpers/userManagement';
+import { copyToClipboard } from '~/helpers/utils/clipboard';
 import IconCheck from '~icons/lucide/check';
 import IconLeft from '~icons/lucide/chevron-left';
 import IconRight from '~icons/lucide/chevron-right';
@@ -277,20 +280,24 @@ import IconX from '~icons/lucide/x';
 const t = useI18n();
 const toast = useToast();
 
+// Time and Date Helpers
 const getCreatedDate = (date: string) => format(new Date(date), 'dd-MM-yyyy');
 const getCreatedTime = (date: string) => format(new Date(date), 'hh:mm a');
+const getLastActiveOn = (date: string | null) =>
+  date ? useTimeAgo(date).value : t('users.not_available');
 
 // Table Headings
 const headings = [
-  { key: 'uid', label: t('users.id') },
   { key: 'displayName', label: t('users.name') },
   { key: 'email', label: t('users.email') },
-  { key: 'createdOn', label: t('users.date') },
+  { key: 'createdOn', label: t('users.created_on') },
+  { key: 'lastActiveOn', label: t('users.last_active_on') },
   { key: '', label: '' },
 ];
 
 // Get Paginated Results of all the users in the infra
 const usersPerPage = 20;
+
 const {
   fetching,
   error,
@@ -305,6 +312,19 @@ const {
 
 // Selected Rows
 const selectedRows = ref<UsersListQuery['infra']['allUsers']>([]);
+
+const areAdminsSelected = computed(() =>
+  selectedRows.value.some((user) => user.isAdmin)
+);
+
+const areNonAdminsSelected = computed(() => {
+  // No Admins selected implicitly conveys that all the selected users are non-Admins assuming `selectedRows.length` > 0 (markup render condition)
+  if (!areAdminsSelected.value) {
+    return true;
+  }
+
+  return selectedRows.value.some((user) => !user.isAdmin);
+});
 
 // Ensure this variable is declared outside the debounce function
 let debounceTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -430,25 +450,48 @@ const router = useRouter();
 const goToUserDetails = (user: UserInfoQuery['infra']['userInfo']) =>
   router.push('/users/' + user.uid);
 
+// Check if SMTP is enabled
+const { data: status } = useQuery({ query: IsSmtpEnabledDocument });
+const smtpEnabled = computed(() => status?.value?.isSMTPEnabled);
+
 // Send Invitation through Email
 const showInviteUserModal = ref(false);
 const sendInvitation = useMutation(InviteNewUserDocument);
 
 const sendInvite = async (email: string) => {
-  if (!email.trim()) {
+  const trimmedEmail = email.trim();
+  if (!trimmedEmail) {
     toast.error(t('state.invalid_email'));
-    return;
+    return false;
+  } else if (trimmedEmail === '') {
+    toast.error(t('users.valid_email'));
+    return false;
   }
-  const variables = { inviteeEmail: email.trim() };
+
+  const variables = { inviteeEmail: trimmedEmail };
   const result = await sendInvitation.executeMutation(variables);
   if (result.error) {
-    if (result.error.message === USER_ALREADY_INVITED)
-      toast.error(t('state.user_already_invited'));
-    else toast.error(t('state.email_failure'));
+    const { message } = result.error;
+    const compiledErrorMessage = getCompiledErrorMessage(message);
+
+    compiledErrorMessage
+      ? toast.error(t(compiledErrorMessage))
+      : toast.error(t('state.email_failure'));
+
+    return false;
   } else {
-    toast.success(t('state.email_success'));
+    if (smtpEnabled.value) toast.success(t('state.email_success'));
     showInviteUserModal.value = false;
+    return true;
   }
+};
+
+const copyInviteLink = async (email: string) => {
+  const result = await sendInvite(email);
+  if (!result) return;
+  const baseURL = import.meta.env.VITE_BASE_URL ?? '';
+  copyToClipboard(baseURL);
+  toast.success(t('state.link_copied_to_clipboard'));
 };
 
 // Make Multiple Users Admin
@@ -522,8 +565,10 @@ const makeAdminsToUsers = async (id: string | null) => {
   const variables = { userUIDs };
   const result = await adminsToUser.executeMutation(variables);
   if (result.error) {
-    if (result.error.message === ONLY_ONE_ADMIN_ACCOUNT_FOUND) {
-      return toast.error(t('state.remove_admin_failure_only_one_admin'));
+    const compiledErrorMessage = getCompiledErrorMessage(result.error.message);
+
+    if (compiledErrorMessage) {
+      return toast.error(t(getCompiledErrorMessage(result.error.message)));
     }
 
     toast.error(

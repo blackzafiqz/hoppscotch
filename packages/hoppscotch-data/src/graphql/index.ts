@@ -3,31 +3,35 @@ import { z } from "zod"
 import V1_VERSION from "./v/1"
 import V2_VERSION from "./v/2"
 import V3_VERSION from "./v/3"
+import V4_VERSION from "./v/4"
+import V5_VERSION from "./v/5"
 
 export { GQLHeader } from "./v/1"
 export {
-  HoppGQLAuthAPIKey,
   HoppGQLAuthBasic,
   HoppGQLAuthBearer,
   HoppGQLAuthNone,
   HoppGQLAuthInherit,
 } from "./v/2"
 
-export { HoppGQLAuth } from "./v/3"
-export { HoppGQLAuthOAuth2 } from "./v/3"
+export { HoppGQLAuthOAuth2, HoppGQLAuth } from "./v/5"
 
-export const GQL_REQ_SCHEMA_VERSION = 3
+export { HoppGQLAuthAPIKey } from "./v/4"
+
+export const GQL_REQ_SCHEMA_VERSION = 5
 
 const versionedObject = z.object({
   v: z.number(),
 })
 
 export const HoppGQLRequest = createVersionedEntity({
-  latestVersion: 3,
+  latestVersion: 5,
   versionMap: {
     1: V1_VERSION,
     2: V2_VERSION,
     3: V3_VERSION,
+    4: V4_VERSION,
+    5: V5_VERSION,
   },
   getVersion(x) {
     const result = versionedObject.safeParse(x)
