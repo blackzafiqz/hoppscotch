@@ -3,7 +3,7 @@ name: "Push containers to GHCR on release"
 on:
   push:
     tags:
-      - '*.*.*'
+      - "*.*.*"
   workflow_dispatch:
     inputs:
       # NO INPUTS
@@ -16,9 +16,13 @@ jobs:
     strategy:
       matrix:
         platform: [
-          { platform: linux/amd64, cache: docker-release-amd64, artifactSuffix: amd64 },
-          { platform: linux/arm64, cache: docker-release-arm64, artifactSuffix: arm64 },
-        ]
+            {
+              platform: linux/amd64,
+              cache: docker-release-amd64,
+              artifactSuffix: amd64,
+            },
+            # { platform: linux/arm64, cache: docker-release-arm64, artifactSuffix: arm64 },
+          ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
