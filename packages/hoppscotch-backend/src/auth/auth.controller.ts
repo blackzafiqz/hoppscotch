@@ -149,6 +149,7 @@ export class AuthController {
       authTokens.right,
       true,
       req.authInfo.state.redirect_uri,
+      this.configService
     );
   }
 

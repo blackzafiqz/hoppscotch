@@ -293,6 +293,9 @@ importers:
       passport-microsoft:
         specifier: 2.1.0
         version: 2.1.0
+      passport-openidconnect:
+        specifier: ^0.1.2
+        version: 0.1.2
       pg:
         specifier: 8.18.0
         version: 8.18.0
@@ -10019,6 +10022,10 @@ packages:
   passport-oauth2@1.8.0:
     resolution: {integrity: sha512-cjsQbOrXIDE4P8nNb3FQRCCmJJ/utnFKEz2NX209f7KOHPoX18gF7gBzBbLLsj2/je4KrgiwLLGjf0lm9rtTBA==}
     engines: {node: '>= 0.4.0'}
+
+  passport-openidconnect@0.1.2:
+    resolution: {integrity: sha512-JX3rTyW+KFZ/E9OF/IpXJPbyLO9vGzcmXB5FgSP2jfL3LGKJPdV7zUE8rWeKeeI/iueQggOeFa3onrCmhxXZTg==}
+    engines: {node: '>= 0.6.0'}
 
   passport-strategy@1.0.0:
     resolution: {integrity: sha512-CB97UUvDKJde2V0KDWWB3lyf6PC3FaZP7YxZ2G8OAtn9p4HI9j9JLP9qjOGZFvyl8uwNT8qM+hGnz/n16NI7oA==}
@@ -23088,6 +23095,11 @@ snapshots:
       passport-strategy: 1.0.0
       uid2: 0.0.4
       utils-merge: 1.0.1
+
+  passport-openidconnect@0.1.2:
+    dependencies:
+      oauth: 0.10.2
+      passport-strategy: 1.0.0
 
   passport-strategy@1.0.0: {}
 
