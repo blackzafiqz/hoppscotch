@@ -4,6 +4,7 @@
     modal-title="modal.collections"
     :importer-modules="importerModules"
     :exporter-modules="exporterModules"
+    :has-team-write-access="hasTeamWriteAccess"
     @hide-modal="emit('hide-modal')"
   />
 </template>
@@ -11,7 +12,8 @@
 <script setup lang="ts">
 import { HoppCollection } from "@hoppscotch/data"
 import * as E from "fp-ts/Either"
-import { PropType, computed, ref } from "vue"
+import { PropType, Ref, computed, ref } from "vue"
+import { transformCollectionForImport } from "~/helpers/collection/collection"
 
 import { FileSource } from "~/helpers/import-export/import/import-sources/FileSource"
 import { UrlSource } from "~/helpers/import-export/import/import-sources/UrlSource"
@@ -19,42 +21,53 @@ import { UrlSource } from "~/helpers/import-export/import/import-sources/UrlSour
 import IconFile from "~icons/lucide/file"
 
 import {
-  hoppRESTImporter,
+  harImporter,
   hoppInsomniaImporter,
-  hoppPostmanImporter,
-  toTeamsImporter,
   hoppOpenAPIImporter,
+  hoppPostmanImporter,
+  hoppRESTImporter,
+  toTeamsImporter,
 } from "~/helpers/import-export/import/importers"
 
 import { defineStep } from "~/composables/step-components"
 
+import AllCollectionImport from "~/components/importExport/ImportExportSteps/AllCollectionImport.vue"
 import { useI18n } from "~/composables/i18n"
 import { useToast } from "~/composables/toast"
 import { appendRESTCollections, restCollections$ } from "~/newstore/collections"
-import MyCollectionImport from "~/components/importExport/ImportExportSteps/MyCollectionImport.vue"
 
-import IconFolderPlus from "~icons/lucide/folder-plus"
-import IconOpenAPI from "~icons/lucide/file"
-import IconPostman from "~icons/hopp/postman"
 import IconInsomnia from "~icons/hopp/insomnia"
+import IconPostman from "~icons/hopp/postman"
+import IconOpenAPI from "~icons/lucide/file"
+import IconFolderPlus from "~icons/lucide/folder-plus"
 import IconGithub from "~icons/lucide/github"
 import IconLink from "~icons/lucide/link"
 
-import IconUser from "~icons/lucide/user"
 import { useReadonlyStream } from "~/composables/stream"
+import IconUser from "~icons/lucide/user"
 
 import { getTeamCollectionJSON } from "~/helpers/backend/helpers"
 
 import { platform } from "~/platform"
 
-import { initializeDownloadCollection } from "~/helpers/import-export/export"
+import { initializeDownloadFile } from "~/helpers/import-export/export"
 import { gistExporter } from "~/helpers/import-export/export/gist"
 import { myCollectionsExporter } from "~/helpers/import-export/export/myCollections"
 import { teamCollectionsExporter } from "~/helpers/import-export/export/teamCollections"
 
-import { GistSource } from "~/helpers/import-export/import/import-sources/GistSource"
 import { ImporterOrExporter } from "~/components/importExport/types"
+import { GistSource } from "~/helpers/import-export/import/import-sources/GistSource"
 import { TeamWorkspace } from "~/services/workspace.service"
+import { invokeAction } from "~/helpers/actions"
+import { ReqType } from "~/helpers/backend/graphql"
+import { sanitizeCollection } from "~/helpers/import-export/import"
+
+const isInsomniaImporterInProgress = ref(false)
+const isOpenAPIImporterInProgress = ref(false)
+const isRESTImporterInProgress = ref(false)
+const isAllCollectionImporterInProgress = ref(false)
+const isHarImporterInProgress = ref(false)
+const isGistImporterInProgress = ref(false)
 
 const t = useI18n()
 const toast = useToast()
@@ -96,40 +109,40 @@ const handleImportToStore = async (collections: HoppCollection[]) => {
 
   if (E.isRight(importResult)) {
     toast.success(t("state.file_imported"))
-    emit("hide-modal")
   } else {
     toast.error(t("import.failed"))
   }
 }
 
+/**
+ * Import collections to personal workspace
+ * We sanitize the collections before importing to remove old id from the imported collection and folders and transform it to new collection format
+ * @param collections Collections to import
+ */
 const importToPersonalWorkspace = (collections: HoppCollection[]) => {
-  appendRESTCollections(collections)
-  return E.right({
-    success: true,
-  })
-}
+  // Remove old id from the imported collection and folders and transform it to new collection format
+  const sanitizedCollections = collections.map(sanitizeCollection)
 
-function translateToTeamCollectionFormat(x: HoppCollection) {
-  const folders: HoppCollection[] = (x.folders ?? []).map(
-    translateToTeamCollectionFormat
-  )
-
-  const data = {
-    auth: x.auth,
-    headers: x.headers,
+  if (
+    platform.sync.collections.importToPersonalWorkspace &&
+    currentUser.value
+  ) {
+    // The SH adds the id to the collection and folders but for safety we remove it by sanitizeCollection
+    return platform.sync.collections.importToPersonalWorkspace(
+      sanitizedCollections,
+      ReqType.Rest
+    )
   }
 
-  const obj = {
-    ...x,
-    folders,
-    data,
-  }
-
-  if (x.id) obj.id = x.id
-
-  return obj
+  appendRESTCollections(sanitizedCollections)
+  return E.right({ success: true })
 }
 
+/**
+ * Import collections to teams workspace
+ * No need to sanitize the collections before importing to teams workspace because the BE handles this and add the new id to the collection and folders
+ * @param collections Collections to import
+ */
 const importToTeamsWorkspace = async (collections: HoppCollection[]) => {
   if (!hasTeamWriteAccess.value || !selectedTeamID.value) {
     return E.left({
@@ -138,7 +151,7 @@ const importToTeamsWorkspace = async (collections: HoppCollection[]) => {
   }
 
   const transformedCollection = collections.map((collection) =>
-    translateToTeamCollectionFormat(collection)
+    transformCollectionForImport(collection)
   )
 
   const res = await toTeamsImporter(
@@ -160,10 +173,93 @@ const emit = defineEmits<{
 const isHoppMyCollectionExporterInProgress = ref(false)
 const isHoppTeamCollectionExporterInProgress = ref(false)
 const isHoppGistCollectionExporterInProgress = ref(false)
+const isPostmanImporterInProgress = ref(false)
 
 const isTeamWorkspace = computed(() => {
   return props.collectionsType.type === "team-collections"
 })
+
+const currentImportSummary: Ref<{
+  showImportSummary: boolean
+  importedCollections: HoppCollection[] | null
+  scriptsImported?: boolean
+  originalScriptCounts?: { preRequest: number; test: number }
+}> = ref({
+  showImportSummary: false,
+  importedCollections: null,
+  scriptsImported: false,
+  originalScriptCounts: undefined,
+})
+
+const setCurrentImportSummary = (
+  collections: HoppCollection[],
+  scriptsImported?: boolean,
+  originalScriptCounts?: { preRequest: number; test: number }
+) => {
+  currentImportSummary.value.importedCollections = collections
+  currentImportSummary.value.showImportSummary = true
+  currentImportSummary.value.scriptsImported = scriptsImported
+  currentImportSummary.value.originalScriptCounts = originalScriptCounts
+}
+
+const unsetCurrentImportSummary = () => {
+  currentImportSummary.value.importedCollections = null
+  currentImportSummary.value.showImportSummary = false
+  currentImportSummary.value.scriptsImported = false
+  currentImportSummary.value.originalScriptCounts = undefined
+}
+
+// Count scripts in raw Postman collection JSON (before import strips them)
+const countPostmanScripts = (
+  content: string[]
+): { preRequest: number; test: number } => {
+  let preRequestCount = 0
+  let testCount = 0
+
+  const countInItem = (item: any) => {
+    // Only count if this is a request (has request object), not a folder
+    const isRequest = item?.request !== undefined
+
+    if (isRequest && item?.event) {
+      const prerequest = item.event.find((e: any) => e.listen === "prerequest")
+      const test = item.event.find((e: any) => e.listen === "test")
+
+      if (
+        prerequest?.script?.exec &&
+        Array.isArray(prerequest.script.exec) &&
+        prerequest.script.exec.some((line: string) => line?.trim())
+      ) {
+        preRequestCount++
+      }
+
+      if (
+        test?.script?.exec &&
+        Array.isArray(test.script.exec) &&
+        test.script.exec.some((line: string) => line?.trim())
+      ) {
+        testCount++
+      }
+    }
+
+    // Recursively count in nested items (folders)
+    if (item?.item && Array.isArray(item.item)) {
+      item.item.forEach(countInItem)
+    }
+  }
+
+  content.forEach((fileContent) => {
+    try {
+      const collection = JSON.parse(fileContent)
+      if (collection?.item && Array.isArray(collection.item)) {
+        collection.item.forEach(countInItem)
+      }
+    } catch (_e) {
+      // Invalid JSON, skip
+    }
+  })
+
+  return { preRequest: preRequestCount, test: testCount }
+}
 
 const HoppRESTImporter: ImporterOrExporter = {
   metadata: {
@@ -173,15 +269,20 @@ const HoppRESTImporter: ImporterOrExporter = {
     icon: IconFolderPlus,
     disabled: false,
     applicableTo: ["personal-workspace", "team-workspace", "url-import"],
+    format: "hoppscotch",
   },
+  importSummary: currentImportSummary,
   component: FileSource({
     caption: "import.from_file",
     acceptedFileTypes: ".json",
     onImportFromFile: async (content) => {
+      isRESTImporterInProgress.value = true
       const res = await hoppRESTImporter(content)()
 
       if (E.isRight(res)) {
-        handleImportToStore(res.right)
+        await handleImportToStore(res.right)
+
+        setCurrentImportSummary(res.right)
 
         platform.analytics?.logEvent({
           type: "HOPP_IMPORT_COLLECTION",
@@ -191,30 +292,57 @@ const HoppRESTImporter: ImporterOrExporter = {
         })
       } else {
         showImportFailedError()
+
+        unsetCurrentImportSummary()
       }
+
+      isRESTImporterInProgress.value = false
     },
+    description: "import.from_hoppscotch_importer_summary",
+    isLoading: isRESTImporterInProgress,
   }),
 }
 
-const HoppMyCollectionImporter: ImporterOrExporter = {
+const HoppAllCollectionImporter: ImporterOrExporter = {
   metadata: {
-    id: "hopp_my_collection",
-    name: "import.from_my_collections",
-    title: "import.from_my_collections_description",
+    id: "hopp_all_collection",
+    name: "import.from_all_collections",
+    title: "import.from_all_collections_description",
     icon: IconUser,
     disabled: false,
-    applicableTo: ["team-workspace"],
+    applicableTo: ["personal-workspace", "team-workspace"],
+    format: "hoppscotch",
   },
-  component: defineStep("my_collection_import", MyCollectionImport, () => ({
-    async onImportFromMyCollection(content) {
-      handleImportToStore([content])
+  onSelect() {
+    if (!currentUser.value) {
+      invokeAction("modals.login.toggle")
+      return true
+    }
 
-      // our analytics consider this as an export event, so keeping compatibility with that
-      platform.analytics?.logEvent({
-        type: "HOPP_EXPORT_COLLECTION",
-        exporter: "import_to_teams",
-        platform: "rest",
-      })
+    return false
+  },
+  importSummary: currentImportSummary,
+  component: defineStep("all_collection_import", AllCollectionImport, () => ({
+    loading: isAllCollectionImporterInProgress.value,
+    async onImportCollection(content) {
+      isAllCollectionImporterInProgress.value = true
+
+      try {
+        await handleImportToStore([content])
+        setCurrentImportSummary([content])
+
+        // our analytics consider this as an export event, so keeping compatibility with that
+        platform.analytics?.logEvent({
+          type: "HOPP_EXPORT_COLLECTION",
+          exporter: "import_to_teams",
+          platform: "rest",
+        })
+      } catch (_e) {
+        showImportFailedError()
+        unsetCurrentImportSummary()
+      }
+
+      isAllCollectionImporterInProgress.value = false
     },
   })),
 }
@@ -227,7 +355,9 @@ const HoppOpenAPIImporter: ImporterOrExporter = {
     icon: IconOpenAPI,
     disabled: false,
     applicableTo: ["personal-workspace", "team-workspace", "url-import"],
+    format: "openapi",
   },
+  importSummary: currentImportSummary,
   supported_sources: [
     {
       id: "file_import",
@@ -236,11 +366,16 @@ const HoppOpenAPIImporter: ImporterOrExporter = {
       step: FileSource({
         caption: "import.from_file",
         acceptedFileTypes: ".json, .yaml, .yml",
+        description: "import.from_openapi_import_summary",
         onImportFromFile: async (content) => {
+          isOpenAPIImporterInProgress.value = true
+
           const res = await hoppOpenAPIImporter(content)()
 
           if (E.isRight(res)) {
-            handleImportToStore(res.right)
+            await handleImportToStore(res.right)
+
+            setCurrentImportSummary(res.right)
 
             platform.analytics?.logEvent({
               platform: "rest",
@@ -250,8 +385,13 @@ const HoppOpenAPIImporter: ImporterOrExporter = {
             })
           } else {
             showImportFailedError()
+
+            unsetCurrentImportSummary()
           }
+
+          isOpenAPIImporterInProgress.value = false
         },
+        isLoading: isOpenAPIImporterInProgress,
       }),
     },
     {
@@ -260,11 +400,16 @@ const HoppOpenAPIImporter: ImporterOrExporter = {
       icon: IconLink,
       step: UrlSource({
         caption: "import.from_url",
+        description: "import.from_openapi_import_summary",
         onImportFromURL: async (content) => {
+          isOpenAPIImporterInProgress.value = true
+
           const res = await hoppOpenAPIImporter([content])()
 
           if (E.isRight(res)) {
-            handleImportToStore(res.right)
+            await handleImportToStore(res.right)
+
+            setCurrentImportSummary(res.right)
 
             platform.analytics?.logEvent({
               platform: "rest",
@@ -274,8 +419,13 @@ const HoppOpenAPIImporter: ImporterOrExporter = {
             })
           } else {
             showImportFailedError()
+
+            unsetCurrentImportSummary()
           }
+
+          isOpenAPIImporterInProgress.value = false
         },
+        isLoading: isOpenAPIImporterInProgress,
       }),
     },
   ],
@@ -289,15 +439,27 @@ const HoppPostmanImporter: ImporterOrExporter = {
     icon: IconPostman,
     disabled: false,
     applicableTo: ["personal-workspace", "team-workspace", "url-import"],
+    format: "postman",
   },
+  importSummary: currentImportSummary,
   component: FileSource({
     caption: "import.from_file",
     acceptedFileTypes: ".json",
-    onImportFromFile: async (content) => {
-      const res = await hoppPostmanImporter(content)()
+    description: "import.from_postman_import_summary",
+    showPostmanScriptOption: true,
+    onImportFromFile: async (content: string[], importScripts?: boolean) => {
+      isPostmanImporterInProgress.value = true
+
+      // Count scripts from raw Postman JSON before importing
+      const originalCounts =
+        importScripts === undefined ? countPostmanScripts(content) : undefined
+
+      const res = await hoppPostmanImporter(content, importScripts ?? false)()
 
       if (E.isRight(res)) {
-        handleImportToStore(res.right)
+        await handleImportToStore(res.right)
+
+        setCurrentImportSummary(res.right, importScripts, originalCounts)
 
         platform.analytics?.logEvent({
           platform: "rest",
@@ -307,8 +469,13 @@ const HoppPostmanImporter: ImporterOrExporter = {
         })
       } else {
         showImportFailedError()
+
+        unsetCurrentImportSummary()
       }
+
+      isPostmanImporterInProgress.value = false
     },
+    isLoading: isPostmanImporterInProgress,
   }),
 }
 
@@ -318,17 +485,24 @@ const HoppInsomniaImporter: ImporterOrExporter = {
     name: "import.from_insomnia",
     title: "import.from_insomnia_description",
     icon: IconInsomnia,
-    disabled: true,
+    disabled: false,
     applicableTo: ["personal-workspace", "team-workspace", "url-import"],
+    format: "insomnia",
   },
+  importSummary: currentImportSummary,
   component: FileSource({
     caption: "import.from_file",
-    acceptedFileTypes: ".json",
+    acceptedFileTypes: ".json, .yaml, .yml, .har",
+    description: "import.from_insomnia_import_summary",
     onImportFromFile: async (content) => {
+      isInsomniaImporterInProgress.value = true
+
       const res = await hoppInsomniaImporter(content)()
 
       if (E.isRight(res)) {
-        handleImportToStore(res.right)
+        await handleImportToStore(res.right)
+
+        setCurrentImportSummary(res.right)
 
         platform.analytics?.logEvent({
           platform: "rest",
@@ -338,8 +512,13 @@ const HoppInsomniaImporter: ImporterOrExporter = {
         })
       } else {
         showImportFailedError()
+
+        unsetCurrentImportSummary()
       }
+
+      isInsomniaImporterInProgress.value = false
     },
+    isLoading: isInsomniaImporterInProgress,
   }),
 }
 
@@ -349,21 +528,28 @@ const HoppGistImporter: ImporterOrExporter = {
     name: "import.from_gist",
     title: "import.from_gist_description",
     icon: IconGithub,
-    disabled: true,
+    disabled: false,
     applicableTo: ["personal-workspace", "team-workspace", "url-import"],
+    format: "hoppscotch",
   },
+  importSummary: currentImportSummary,
   component: GistSource({
     caption: "import.from_url",
+    description: "import.from_gist_import_summary",
     onImportFromGist: async (content) => {
       if (E.isLeft(content)) {
         showImportFailedError()
         return
       }
 
+      isGistImporterInProgress.value = true
+
       const res = await hoppRESTImporter(content.right)()
 
       if (E.isRight(res)) {
-        handleImportToStore(res.right)
+        await handleImportToStore(res.right)
+
+        setCurrentImportSummary(res.right)
 
         platform.analytics?.logEvent({
           platform: "rest",
@@ -373,8 +559,13 @@ const HoppGistImporter: ImporterOrExporter = {
         })
       } else {
         showImportFailedError()
+
+        unsetCurrentImportSummary()
       }
+
+      isGistImporterInProgress.value = false
     },
+    isLoading: isGistImporterInProgress,
   }),
 }
 
@@ -387,27 +578,31 @@ const HoppMyCollectionsExporter: ImporterOrExporter = {
     disabled: false,
     applicableTo: ["personal-workspace"],
     isLoading: isHoppMyCollectionExporterInProgress,
+    format: "hoppscotch",
   },
-  action: () => {
+  importSummary: currentImportSummary,
+  action: async () => {
     if (!myCollections.value.length) {
       return toast.error(t("error.no_collections_to_export"))
     }
 
     isHoppMyCollectionExporterInProgress.value = true
 
-    const message = initializeDownloadCollection(
+    const message = await initializeDownloadFile(
       myCollectionsExporter(myCollections.value),
-      "Collections"
+      "hoppscotch-personal-collections"
     )
 
     if (E.isRight(message)) {
-      toast.success(t(message.right))
+      toast.success(t("state.download_started"))
 
       platform.analytics?.logEvent({
         type: "HOPP_EXPORT_COLLECTION",
         exporter: "json",
         platform: "rest",
       })
+    } else {
+      toast.error(t(message.left))
     }
 
     isHoppMyCollectionExporterInProgress.value = false
@@ -418,12 +613,13 @@ const HoppTeamCollectionsExporter: ImporterOrExporter = {
   metadata: {
     id: "hopp_team_collections",
     name: "export.as_json",
-    title: "export.as_json_description",
+    title: "export.as_json",
     icon: IconUser,
     disabled: false,
     applicableTo: ["team-workspace"],
     isLoading: isHoppTeamCollectionExporterInProgress,
   },
+  importSummary: currentImportSummary,
   action: async () => {
     isHoppTeamCollectionExporterInProgress.value = true
     if (
@@ -435,18 +631,14 @@ const HoppTeamCollectionsExporter: ImporterOrExporter = {
       )
 
       if (E.isRight(res)) {
-        const { exportCollectionsToJSON } = res.right
-
-        if (!JSON.parse(exportCollectionsToJSON).length) {
-          isHoppTeamCollectionExporterInProgress.value = false
-
-          return toast.error(t("error.no_collections_to_export"))
-        }
-
-        initializeDownloadCollection(
-          exportCollectionsToJSON,
-          "team-collections"
+        const message = await initializeDownloadFile(
+          res.right,
+          "hoppscotch-team-collections"
         )
+
+        E.isRight(message)
+          ? toast.success(t(message.right))
+          : toast.error(t(message.left))
 
         platform.analytics?.logEvent({
           type: "HOPP_EXPORT_COLLECTION",
@@ -454,7 +646,7 @@ const HoppTeamCollectionsExporter: ImporterOrExporter = {
           platform: "rest",
         })
       } else {
-        toast.error(res.left.error.toString())
+        toast.error(res.left)
       }
     }
 
@@ -492,11 +684,6 @@ const HoppGistCollectionsExporter: ImporterOrExporter = {
     }
 
     if (E.isRight(collectionJSON)) {
-      if (!JSON.parse(collectionJSON.right).length) {
-        isHoppGistCollectionExporterInProgress.value = false
-        return toast.error(t("error.no_collections_to_export"))
-      }
-
       const res = await gistExporter(collectionJSON.right, accessToken)
 
       if (E.isLeft(res)) {
@@ -512,28 +699,79 @@ const HoppGistCollectionsExporter: ImporterOrExporter = {
         platform: "rest",
       })
 
-      platform.io.openExternalLink(res.right)
+      platform.kernelIO.openExternalLink({ url: res.right })
+    } else {
+      toast.error(collectionJSON.left)
     }
 
     isHoppGistCollectionExporterInProgress.value = false
   },
 }
 
+const HARImporter: ImporterOrExporter = {
+  metadata: {
+    id: "har",
+    name: "import.from_har",
+    title: "import.from_har_description",
+    icon: IconFile,
+    disabled: false,
+    applicableTo: ["personal-workspace", "team-workspace"],
+    format: "har",
+  },
+  importSummary: currentImportSummary,
+  component: FileSource({
+    caption: "import.from_file",
+    acceptedFileTypes: ".har",
+    description: "import.from_har_import_summary",
+    onImportFromFile: async (content) => {
+      isHarImporterInProgress.value = true
+
+      const res = await harImporter(content)
+
+      if (E.isRight(res)) {
+        await handleImportToStore(res.right)
+
+        setCurrentImportSummary(res.right)
+
+        platform.analytics?.logEvent({
+          type: "HOPP_IMPORT_COLLECTION",
+          importer: "import.from_har",
+          platform: "rest",
+          workspaceType: isTeamWorkspace.value ? "team" : "personal",
+        })
+      } else {
+        showImportFailedError()
+
+        unsetCurrentImportSummary()
+      }
+
+      isHarImporterInProgress.value = false
+    },
+    isLoading: isHarImporterInProgress,
+  }),
+}
+
 const importerModules = computed(() => {
   const enabledImporters = [
     HoppRESTImporter,
-    HoppMyCollectionImporter,
+    HoppAllCollectionImporter,
     HoppOpenAPIImporter,
     HoppPostmanImporter,
     HoppInsomniaImporter,
     HoppGistImporter,
+    HARImporter,
   ]
 
   const isTeams = props.collectionsType.type === "team-collections"
 
   return enabledImporters.filter((importer) => {
+    if (importer.metadata.disabled) {
+      return false
+    }
+
     return isTeams
-      ? importer.metadata.applicableTo.includes("team-workspace")
+      ? importer.metadata.applicableTo.includes("team-workspace") &&
+          hasTeamWriteAccess.value
       : importer.metadata.applicableTo.includes("personal-workspace")
   })
 })
@@ -589,9 +827,7 @@ const getCollectionJSON = async () => {
       props.collectionsType.selectedTeam?.teamID
     )
 
-    return E.isRight(res)
-      ? E.right(res.right.exportCollectionsToJSON)
-      : E.left(res.left)
+    return E.isRight(res) ? E.right(res.right) : E.left(res.left)
   }
 
   if (props.collectionsType.type === "my-collections") {

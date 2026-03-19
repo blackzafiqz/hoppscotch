@@ -329,6 +329,7 @@
     "danger_zone": "危険",
     "delete_account": "あなたのアカウントは以下のチームのオーナーとなっています:",
     "delete_account_description": "アカウントを削除する前にチームを離脱するか、オーナーを委任するか、チームを削除してください。",
+    "empty_email_address": "Email Address cannot be empty",
     "empty_profile_name": "Profile name cannot be empty",
     "empty_req_name": "リクエスト名がありません",
     "f12_details": "（詳細はF12キーを押してください）",
@@ -349,10 +350,11 @@
     "page_not_found": "このページは見つかりませんでした",
     "please_install_extension": "Please install the extension and add origin to the extension.",
     "proxy_error": "Proxy error",
+    "same_email_address": "Updated email address is same as the current email address",
     "same_profile_name": "Updated profile name is same as the current profile name",
     "script_fail": "リクエスト前のスクリプトを実行できませんでした",
     "something_went_wrong": "不明なエラーです",
-    "test_script_fail": "リクエスト後のスクリプトを実行できませんでした",
+    "post_request_script_fail": "リクエスト後のスクリプトを実行できませんでした",
     "reading_files": "Error while reading one or more files.",
     "fetching_access_tokens_list": "Something went wrong while fetching the list of tokens",
     "generate_access_token": "Something went wrong while generating the access token",
@@ -415,8 +417,8 @@
     "post_request_tests": "テストスクリプトはJavaScriptで記述されており、レスポンスを受信した後に実行されます。",
     "pre_request_script": "プリリクエストスクリプトはJavaScriptで記述されており、リクエストが送信される前に実行されます。",
     "script_fail": "プリリクエストスクリプトに問題があるようです。以下のエラーを確認し、スクリプトを修正してください。",
-    "test_script_fail": "テストスクリプトにエラーがあるようです。エラーを修正し、再度テストを実行してください。",
-    "tests": "デバッグを自動化するテストスクリプトを作成します。"
+    "post_request_script_fail": "テストスクリプトにエラーがあるようです。エラーを修正し、再度テストを実行してください。",
+    "post_request_script": "デバッグを自動化するテストスクリプトを作成します。"
   },
   "hide": {
     "collection": "コレクションパネルを非表示",
@@ -622,7 +624,7 @@
   "response": {
     "audio": "Audio",
     "body": "レスポンスボディ",
-    "filter_response_body": "JSONレスポンスボディをフィルタ (JSONPathシンタックスを使用)",
+    "filter_response_body": "JSONレスポンスボディをフィルタ (jqシンタックスを使用)",
     "headers": "ヘッダー",
     "html": "HTML",
     "image": "画像",

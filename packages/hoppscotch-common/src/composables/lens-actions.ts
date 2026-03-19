@@ -1,10 +1,7 @@
 import { HoppRESTResponse } from "@helpers/types/HoppRESTResponse"
 import { copyToClipboard } from "@helpers/utils/clipboard"
 import { refAutoReset } from "@vueuse/core"
-import { pipe } from "fp-ts/function"
-import * as RNEA from "fp-ts/ReadonlyNonEmptyArray"
-import * as S from "fp-ts/string"
-import { computed, ComputedRef, onMounted, ref, Ref } from "vue"
+import { computed, ComputedRef, ref, Ref, watch } from "vue"
 
 import jsonToLanguage from "~/helpers/utils/json-to-language"
 import { platform } from "~/platform"
@@ -13,6 +10,7 @@ import IconCopy from "~icons/lucide/copy"
 import IconDownload from "~icons/lucide/download"
 import { useI18n } from "./i18n"
 import { useToast } from "./toast"
+import { HoppRESTRequestResponse } from "@hoppscotch/data"
 
 export function useCopyInterface(responseBodyText: Ref<string>) {
   const toast = useToast()
@@ -58,7 +56,8 @@ export type downloadResponseReturnType = (() => void) | Ref<any>
 
 export function useDownloadResponse(
   contentType: string,
-  responseBody: Ref<string | ArrayBuffer>
+  responseBody: Ref<string | ArrayBuffer>,
+  filename: string
 ) {
   const downloadIcon = refAutoReset(IconDownload, 1000)
 
@@ -68,26 +67,8 @@ export function useDownloadResponse(
   const downloadResponse = async () => {
     const dataToWrite = responseBody.value
 
-    // Guess extension and filename
-    const file = new Blob([dataToWrite], { type: contentType })
-    const url = URL.createObjectURL(file)
-
-    const filename = pipe(
-      url,
-      S.split("/"),
-      RNEA.last,
-      S.split("#"),
-      RNEA.head,
-      S.split("?"),
-      RNEA.head
-    )
-
-    URL.revokeObjectURL(url)
-
-    console.log(filename)
-
     // TODO: Look at the mime type and determine extension ?
-    const result = await platform.io.saveFileWithDialog({
+    const result = await platform.kernelIO.saveFileWithDialog({
       data: dataToWrite,
       contentType: contentType,
       suggestedFilename: filename,
@@ -107,7 +88,7 @@ export function useDownloadResponse(
 }
 
 export function usePreview(
-  previewEnabledDefault: boolean,
+  previewEnabled: Ref<boolean>,
   responseBodyText: Ref<string>
 ): {
   previewFrame: Ref<HTMLIFrameElement | null>
@@ -115,17 +96,7 @@ export function usePreview(
   togglePreview: () => void
 } {
   const previewFrame: Ref<HTMLIFrameElement | null> = ref(null)
-  const previewEnabled = ref(previewEnabledDefault)
   const url = ref("")
-
-  // `previewFrame` is a template ref that gets attached to the `iframe` element when the component mounts
-  // Ensures the HTML content is rendered immediately after a request, persists between tab switches, and is not limited to preview toggles
-  onMounted(() => updatePreviewFrame())
-
-  // Prevent updating the `iframe` element attributes during preview toggle actions after they are set initially
-  const shouldUpdatePreviewFrame = computed(
-    () => previewFrame.value?.getAttribute("data-previewing-url") !== url.value
-  )
 
   const updatePreviewFrame = () => {
     if (
@@ -145,8 +116,34 @@ export function usePreview(
       // Finally, set the iframe source to the resulting HTML.
       previewFrame.value.srcdoc = previewDocument.documentElement.outerHTML
       previewFrame.value.setAttribute("data-previewing-url", url.value)
+
+      // Enable sandboxing for the iframe but this can have security implications
+      // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/iframe#attr-sandbox
+      // https://stackoverflow.com/a/30785417
+      // previewFrame.value.setAttribute(
+      //   "sandbox",
+      //   "allow-scripts allow-same-origin"
+      // )
     }
   }
+
+  // `previewFrame` is a template ref that gets attached to the `iframe` element when the component mounts
+  // Ensures the HTML content is rendered immediately after a request, persists between tab switches, and is not limited to preview toggles
+  // Also watches for changes in the `previewEnabled` state to update the `iframe` element attributes
+  watch(
+    previewEnabled,
+    () => {
+      updatePreviewFrame()
+    },
+    {
+      immediate: true,
+    }
+  )
+
+  // Prevent updating the `iframe` element attributes during preview toggle actions after they are set initially
+  const shouldUpdatePreviewFrame = computed(
+    () => previewFrame.value?.getAttribute("data-previewing-url") !== url.value
+  )
 
   const togglePreview = () => {
     previewEnabled.value = !previewEnabled.value
@@ -160,25 +157,33 @@ export function usePreview(
   }
 }
 
-export function useResponseBody(response: HoppRESTResponse): {
+export function useResponseBody(
+  response: HoppRESTResponse | HoppRESTRequestResponse
+): {
   responseBodyText: ComputedRef<string>
 } {
   const responseBodyText = computed(() => {
-    if (
-      response.type === "loading" ||
-      response.type === "network_fail" ||
-      response.type === "script_fail" ||
-      response.type === "fail" ||
-      response.type === "extension_error"
-    )
-      return ""
-    if (typeof response.body === "string") return response.body
-
-    const res = new TextDecoder("utf-8").decode(response.body)
-    // HACK: Temporary trailing null character issue from the extension fix
-    return res.replace(/\0+$/, "")
+    if ("type" in response) {
+      if (
+        response.type === "loading" ||
+        response.type === "network_fail" ||
+        response.type === "script_fail" ||
+        response.type === "fail" ||
+        response.type === "extension_error"
+      )
+        return ""
+    }
+    return getResponseBodyText(response.body)
   })
   return {
     responseBodyText,
   }
+}
+
+export function getResponseBodyText(body: ArrayBuffer | string): string {
+  if (typeof body === "string") return body
+
+  const res = new TextDecoder("utf-8").decode(body)
+  // HACK: Temporary trailing null character issue from the extension fix
+  return res.replace(/\0+$/, "")
 }

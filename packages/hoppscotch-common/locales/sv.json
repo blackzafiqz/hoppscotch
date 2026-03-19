@@ -329,6 +329,7 @@
     "danger_zone": "Danger zone",
     "delete_account": "Your account is currently an owner in these teams:",
     "delete_account_description": "You must either remove yourself, transfer ownership, or delete these teams before you can delete your account.",
+    "empty_email_address": "Email Address cannot be empty",
     "empty_profile_name": "Profile name cannot be empty",
     "empty_req_name": "Tom förfrågningsnamn",
     "f12_details": "(F12 för detaljer)",
@@ -349,10 +350,11 @@
     "page_not_found": "This page could not be found",
     "please_install_extension": "Please install the extension and add origin to the extension.",
     "proxy_error": "Proxy error",
+    "same_email_address": "Updated email address is same as the current email address",
     "same_profile_name": "Updated profile name is same as the current profile name",
     "script_fail": "Det gick inte att köra skriptet för förhandsbegäran",
     "something_went_wrong": "Något gick fel",
-    "test_script_fail": "Could not execute post-request script",
+    "post_request_script_fail": "Could not execute post-request script",
     "reading_files": "Error while reading one or more files.",
     "fetching_access_tokens_list": "Something went wrong while fetching the list of tokens",
     "generate_access_token": "Something went wrong while generating the access token",
@@ -415,8 +417,8 @@
     "post_request_tests": "Testskript skrivs i JavaScript och körs efter att svaret har mottagits.",
     "pre_request_script": "Skript för förfrågan skrivs i JavaScript och körs innan begäran skickas.",
     "script_fail": "Det verkar finnas ett fel i skriptet för förhandsbegäran. Kontrollera felet nedan och fixa skriptet därefter.",
-    "test_script_fail": "There seems to be an error with test script. Please fix the errors and run tests again",
-    "tests": "Skriv ett testskript för att automatisera felsökning."
+    "post_request_script_fail": "There seems to be an error with test script. Please fix the errors and run tests again",
+    "post_request_script": "Skriv ett testskript för att automatisera felsökning."
   },
   "hide": {
     "collection": "Collapse Collection Panel",
@@ -622,7 +624,7 @@
   "response": {
     "audio": "Audio",
     "body": "Svarskommitté",
-    "filter_response_body": "Filter JSON response body (uses JSONPath syntax)",
+    "filter_response_body": "Filter JSON response body (uses jq syntax)",
     "headers": "Rubriker",
     "html": "HTML",
     "image": "Bild",

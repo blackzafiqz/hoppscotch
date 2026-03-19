@@ -7,17 +7,26 @@
       <EnvironmentsMyEnvironment
         environment-index="Global"
         :environment="globalEnvironment"
+        :duplicate-global-environment-loading="
+          duplicateGlobalEnvironmentLoading
+        "
+        :show-context-menu-loading-state="workspace.type === 'team'"
         class="border-b border-dividerLight"
+        @duplicate-global-environment="duplicateGlobalEnvironment"
         @edit-environment="editEnvironment('Global')"
       />
     </div>
-    <EnvironmentsMy v-show="environmentType.type === 'my-environments'" />
+    <EnvironmentsMy
+      v-show="isPersonalEnvironmentType"
+      @select-environment="handleEnvironmentChange"
+    />
     <EnvironmentsTeams
       v-show="environmentType.type === 'team-environments'"
       :team="environmentType.selectedTeam"
       :team-environments="teamEnvironmentList"
       :loading="loading"
       :adapter-error="adapterError"
+      @select-environment="handleEnvironmentChange"
     />
     <EnvironmentsMyDetails
       :show="showModalDetails"
@@ -47,20 +56,27 @@
 
 <script setup lang="ts">
 import { useReadonlyStream, useStream } from "@composables/stream"
-import { Environment } from "@hoppscotch/data"
+import { Environment, GlobalEnvironment } from "@hoppscotch/data"
 import { useService } from "dioc/vue"
 import * as TE from "fp-ts/TaskEither"
 import { pipe } from "fp-ts/function"
-import { isEqual } from "lodash-es"
+import { cloneDeep, isEqual } from "lodash-es"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "~/composables/i18n"
 import { useToast } from "~/composables/toast"
 import { defineActionHandler } from "~/helpers/actions"
 import { GQLError } from "~/helpers/backend/GQLClient"
-import { deleteTeamEnvironment } from "~/helpers/backend/mutations/TeamEnvironment"
+import {
+  createTeamEnvironment,
+  deleteTeamEnvironment,
+} from "~/helpers/backend/mutations/TeamEnvironment"
+import { getEnvActionErrorMessage } from "~/helpers/error-messages"
+import { TeamEnvironment } from "~/helpers/teams/TeamEnvironment"
 import TeamEnvironmentAdapter from "~/helpers/teams/TeamEnvironmentAdapter"
 import {
+  createEnvironment,
   deleteEnvironment,
+  getGlobalVariables,
   getSelectedEnvironmentIndex,
   globalEnv$,
   selectedEnvironmentIndex$,
@@ -85,14 +101,18 @@ const environmentType = ref<EnvironmentsChooseType>({
   selectedTeam: undefined,
 })
 
-const globalEnv = useReadonlyStream(globalEnv$, [])
+const globalEnv = useReadonlyStream(globalEnv$, {} as GlobalEnvironment)
 
-const globalEnvironment = computed(() => ({
-  v: 1 as const,
+const globalEnvironment = computed<Environment>(() => ({
+  v: 2 as const,
   id: "Global",
   name: "Global",
-  variables: globalEnv.value,
+  variables: globalEnv.value.variables,
 }))
+
+const isPersonalEnvironmentType = computed(
+  () => environmentType.value.type === "my-environments"
+)
 
 const currentUser = useReadonlyStream(
   platform.auth.getCurrentUserStream(),
@@ -106,6 +126,12 @@ const adapter = new TeamEnvironmentAdapter(undefined)
 const adapterLoading = useReadonlyStream(adapter.loading$, false)
 const adapterError = useReadonlyStream(adapter.error$, null)
 const teamEnvironmentList = useReadonlyStream(adapter.teamEnvironmentList$, [])
+
+const selectedEnvironmentIndex = useStream(
+  selectedEnvironmentIndex$,
+  { type: "NO_ENV_SELECTED" },
+  setSelectedEnvironmentIndex
+)
 
 const loading = computed(
   () => adapterLoading.value && teamEnvironmentList.value.length === 0
@@ -133,18 +159,34 @@ const workspace = workspaceService.currentWorkspace
 
 // Switch to my environments if workspace is personal and to team environments if workspace is team
 // also resets selected environment if workspace is personal and the previous selected environment was a team environment
-watch(workspace, (newWorkspace) => {
-  if (newWorkspace.type === "personal") {
-    switchToMyEnvironments()
-    if (selectedEnvironmentIndex.value.type !== "MY_ENV") {
+watch(
+  workspace,
+  (newWorkspace) => {
+    const { type: newWorkspaceType } = newWorkspace
+
+    if (newWorkspaceType === "personal") {
+      switchToMyEnvironments()
+    } else {
+      updateSelectedTeam(newWorkspace)
+    }
+
+    const newTeamID =
+      newWorkspaceType === "team" ? newWorkspace.teamID : undefined
+
+    // Set active environment to the `No environment` state
+    // if navigating away from a team workspace
+    if (
+      selectedEnvironmentIndex.value.type === "TEAM_ENV" &&
+      newTeamID &&
+      selectedEnvironmentIndex.value.teamID !== newTeamID
+    ) {
       setSelectedEnvironmentIndex({
         type: "NO_ENV_SELECTED",
       })
     }
-  } else if (newWorkspace.type === "team") {
-    updateSelectedTeam(newWorkspace)
-  }
-})
+  },
+  { immediate: true }
+)
 
 watch(
   () => currentUser.value,
@@ -163,6 +205,7 @@ const editingEnvironmentIndex = ref<"Global" | null>(null)
 const editingVariableName = ref("")
 const editingVariableValue = ref("")
 const secretOptionSelected = ref(false)
+const duplicateGlobalEnvironmentLoading = ref(false)
 
 const position = ref({ top: 0, left: 0 })
 
@@ -177,11 +220,78 @@ const displayModalEdit = (shouldDisplay: boolean) => {
   if (!shouldDisplay) resetSelectedData()
 }
 
+export type HandleEnvChangeProp = {
+  index: number
+  env?:
+    | {
+        type: "my-environment"
+        environment: Environment
+      }
+    | {
+        type: "team-environment"
+        environment: TeamEnvironment
+      }
+}
+
+const handleEnvironmentChange = ({ index, env }: HandleEnvChangeProp) => {
+  if (env?.type === "my-environment") {
+    selectedEnvironmentIndex.value = {
+      type: "MY_ENV",
+      index,
+    }
+    return
+  }
+
+  if (env?.type === "team-environment") {
+    selectedEnvironmentIndex.value = {
+      type: "TEAM_ENV",
+      teamEnvID: env.environment.id,
+      teamID: env.environment.teamID,
+      environment: env.environment.environment,
+    }
+  }
+}
+
 const editEnvironment = (environmentIndex: "Global") => {
   editingEnvironmentIndex.value = environmentIndex
   action.value = "edit"
   editingVariableName.value = ""
   displayModalEdit(true)
+}
+
+const duplicateGlobalEnvironment = async () => {
+  if (workspace.value.type === "team") {
+    duplicateGlobalEnvironmentLoading.value = true
+
+    await pipe(
+      createTeamEnvironment(
+        JSON.stringify(globalEnvironment.value.variables),
+        workspace.value.teamID,
+        `Global - ${t("action.duplicate")}`
+      ),
+      TE.match(
+        (err: GQLError<string>) => {
+          console.error(err)
+
+          toast.error(t(getEnvActionErrorMessage(err)))
+        },
+        () => {
+          toast.success(t("environment.duplicated"))
+        }
+      )
+    )()
+
+    duplicateGlobalEnvironmentLoading.value = false
+
+    return
+  }
+
+  createEnvironment(
+    `Global - ${t("action.duplicate")}`,
+    cloneDeep(getGlobalVariables())
+  )
+
+  toast.success(`${t("environment.duplicated")}`)
 }
 
 const removeSelectedEnvironment = () => {
@@ -226,7 +336,7 @@ defineActionHandler("modals.environment.delete-selected", () => {
 
 const additionalVars = ref<Environment["variables"]>([])
 
-const envVars = () => [...globalEnv.value, ...additionalVars.value]
+const envVars = () => [...globalEnv.value.variables, ...additionalVars.value]
 
 defineActionHandler(
   "modals.global.environment.update",
@@ -238,12 +348,6 @@ defineActionHandler(
     editEnvironment("Global")
     editingVariableName.value = "Global"
   }
-)
-
-const selectedEnvironmentIndex = useStream(
-  selectedEnvironmentIndex$,
-  { type: "NO_ENV_SELECTED" },
-  setSelectedEnvironmentIndex
 )
 
 /* Checking if there are any changes in the selected team environment when there are any updates

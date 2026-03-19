@@ -329,6 +329,7 @@
     "danger_zone": "Небезпечна зона",
     "delete_account": "Ваш обліковий запис на разі володіє цими командами:",
     "delete_account_description": "Ви повинні або видалити себе, або передати право власності, або видалити ці команди, перш ніж ви зможете видалити свій обліковий запис.",
+    "empty_email_address": "Email Address cannot be empty",
     "empty_profile_name": "Profile name cannot be empty",
     "empty_req_name": "Пуста назва запиту",
     "f12_details": "(F12 для деталей)",
@@ -349,10 +350,11 @@
     "page_not_found": "Ця сторінка не знайдена",
     "please_install_extension": "Please install the extension and add origin to the extension.",
     "proxy_error": "Proxy error",
+    "same_email_address": "Updated email address is same as the current email address",
     "same_profile_name": "Updated profile name is same as the current profile name",
     "script_fail": "Не вдалося виконати сценарій попереднього запиту",
     "something_went_wrong": "Щось пішло не так",
-    "test_script_fail": "Не вдалося виконати скрипт після запиту",
+    "post_request_script_fail": "Не вдалося виконати скрипт після запиту",
     "reading_files": "Error while reading one or more files.",
     "fetching_access_tokens_list": "Something went wrong while fetching the list of tokens",
     "generate_access_token": "Something went wrong while generating the access token",
@@ -415,8 +417,8 @@
     "post_request_tests": "Тестові скрипти записуються на JavaScript і запускаються після отримання відповіді.",
     "pre_request_script": "Скрипти написані на JavaScript і запускаються перед надсиланням запиту.",
     "script_fail": "Схоже, є збій у скрипті. Перевірте помилку нижче та виправте відповідним чином сценарій.",
-    "test_script_fail": "Здається виникла помилка з тестовим скриптом. Будь ласка, виправте помилки і спробуйте знову",
-    "tests": "Напишіть тестовий скрипт для автоматизації налагодження."
+    "post_request_script_fail": "Здається виникла помилка з тестовим скриптом. Будь ласка, виправте помилки і спробуйте знову",
+    "post_request_script": "Напишіть тестовий скрипт для автоматизації налагодження."
   },
   "hide": {
     "collection": "Згорнути панель колекції",
@@ -622,7 +624,7 @@
   "response": {
     "audio": "Audio",
     "body": "Орган реагування",
-    "filter_response_body": "Фільтр тіла відповідей JSON (використовує синтаксис JSONPath)",
+    "filter_response_body": "Фільтр тіла відповідей JSON (використовує синтаксис jq)",
     "headers": "Заголовки",
     "html": "HTML",
     "image": "Зображення",

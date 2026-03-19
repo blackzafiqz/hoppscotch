@@ -14,11 +14,11 @@
             v-for="tab in activeTabs"
             :id="tab.id"
             :key="tab.id"
-            :label="tab.document.request.name"
+            :label="getTabName(tab)"
             :is-removable="activeTabs.length > 1"
             :close-visibility="'hover'"
           >
-            <template #tabhead>
+            <template v-if="tab.document.type === 'request'" #tabhead>
               <HttpTabHead
                 :tab="tab"
                 :is-removable="activeTabs.length > 1"
@@ -44,10 +44,24 @@
                 </svg>
               </span>
             </template>
-            <HttpRequestTab
+            <HttpExampleResponseTab
+              v-if="tab.document.type === 'example-response'"
               :model-value="tab"
               @update:model-value="onTabUpdate"
             />
+            <!-- Render TabContents -->
+            <HttpTestRunner
+              v-if="tab.document.type === 'test-runner'"
+              :model-value="tab"
+              @update:model-value="onTabUpdate"
+            />
+            <!-- When document.type === 'request' the tab type is HoppTab<HoppRequestDocument>-->
+            <HttpRequestTab
+              v-if="tab.document.type === 'request'"
+              :model-value="tab"
+              @update:model-value="onTabUpdate"
+            />
+            <!-- END Render TabContents -->
           </HoppSmartWindow>
           <template #actions>
             <EnvironmentsSelector class="h-full" />
@@ -60,6 +74,7 @@
     </AppPaneLayout>
     <CollectionsEditRequest
       v-model="reqName"
+      :request-context="requestToRename"
       :show="showRenamingReqNameModal"
       @submit="renameReqName"
       @hide-modal="showRenamingReqNameModal = false"
@@ -118,8 +133,8 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, onMounted } from "vue"
-import { safelyExtractRESTRequest } from "@hoppscotch/data"
+import { ref, onMounted, computed } from "vue"
+import { generateUniqueRefId, safelyExtractRESTRequest } from "@hoppscotch/data"
 import { translateExtURLParams } from "~/helpers/RESTExtURLParams"
 import { useRoute } from "vue-router"
 import { useI18n } from "@composables/i18n"
@@ -129,13 +144,17 @@ import { platform } from "~/platform"
 import { useReadonlyStream } from "~/composables/stream"
 import { useService } from "dioc/vue"
 import { InspectionService } from "~/services/inspection"
-import { HeaderInspectorService } from "~/services/inspection/inspectors/header.inspector"
+import { RequestInspectorService } from "~/services/inspection/inspectors/request.inspector"
 import { EnvironmentInspectorService } from "~/services/inspection/inspectors/environment.inspector"
 import { ResponseInspectorService } from "~/services/inspection/inspectors/response.inspector"
+import { ScriptingInterceptorInspectorService } from "~/services/inspection/inspectors/scripting-interceptor.inspector"
 import { cloneDeep } from "lodash-es"
 import { RESTTabService } from "~/services/tab/rest"
 import { HoppTab } from "~/services/tab"
-import { HoppRESTDocument } from "~/helpers/rest/document"
+import { HoppRequestDocument, HoppTabDocument } from "~/helpers/rest/document"
+import { ScrollService } from "~/services/scroll.service"
+
+const scrollService = useService(ScrollService)
 
 const savingRequest = ref(false)
 const confirmingCloseForTabID = ref<string | null>(null)
@@ -186,6 +205,8 @@ function bindRequestToURLParams() {
     // We skip URL params parsing
     if (Object.keys(query).length === 0 || query.code || query.error) return
 
+    if (tabs.currentActiveTab.value.document.type !== "request") return
+
     const request = tabs.currentActiveTab.value.document.request
 
     tabs.currentActiveTab.value.document.request = safelyExtractRESTRequest(
@@ -195,12 +216,13 @@ function bindRequestToURLParams() {
   })
 }
 
-const onTabUpdate = (tab: HoppTab<HoppRESTDocument>) => {
+const onTabUpdate = (tab: HoppTab<HoppRequestDocument>) => {
   tabs.updateTab(tab)
 }
 
 const addNewTab = () => {
   const tab = tabs.createNewTab({
+    type: "request",
     request: getDefaultRESTRequest(),
     isDirty: false,
   })
@@ -211,6 +233,18 @@ const sortTabs = (e: { oldIndex: number; newIndex: number }) => {
   tabs.updateTabOrdering(e.oldIndex, e.newIndex)
 }
 
+const getTabName = (tab: HoppTab<HoppTabDocument>) => {
+  if (tab.document.type === "request") {
+    return tab.document.request.name
+  } else if (tab.document.type === "test-runner") {
+    return tab.document.collection.name
+  } else if (tab.document.type === "example-response") {
+    return tab.document.response.name
+  }
+
+  return "Unnamed tab"
+}
+
 const inspectionService = useService(InspectionService)
 
 const removeTab = (tabID: string) => {
@@ -219,6 +253,7 @@ const removeTab = (tabID: string) => {
   if (tabState.document.isDirty) {
     confirmingCloseForTabID.value = tabID
   } else {
+    scrollService.cleanupScrollForTab(tabState.id)
     tabs.closeTab(tabState.id)
     inspectionService.deleteTabInspectorResult(tabState.id)
   }
@@ -236,15 +271,20 @@ const closeOtherTabsAction = (tabID: string) => {
     unsavedTabsCount.value = balanceDirtyTabCount
     exceptedTabID.value = tabID
   } else {
+    scrollService.cleanupAllScroll(tabID)
     tabs.closeOtherTabs(tabID)
   }
 }
 
 const duplicateTab = (tabID: string) => {
   const tab = tabs.getTabRef(tabID)
-  if (tab.value) {
+  if (tab.value && tab.value.document.type === "request") {
     const newTab = tabs.createNewTab({
-      request: cloneDeep(tab.value.document.request),
+      type: "request",
+      request: {
+        ...cloneDeep(tab.value.document.request),
+        _ref_id: generateUniqueRefId("req"),
+      },
       isDirty: true,
     })
     tabs.setActiveTab(newTab.id)
@@ -252,24 +292,44 @@ const duplicateTab = (tabID: string) => {
 }
 
 const onResolveConfirmCloseAllTabs = () => {
-  if (exceptedTabID.value) tabs.closeOtherTabs(exceptedTabID.value)
+  if (exceptedTabID.value) {
+    scrollService.cleanupAllScroll(exceptedTabID.value)
+    tabs.closeOtherTabs(exceptedTabID.value)
+  }
   confirmingCloseAllTabs.value = false
 }
+
+const requestToRename = computed(() => {
+  if (!renameTabID.value) return null
+  const tab = tabs.getTabRef(renameTabID.value)
+
+  return tab.value.document.type === "request"
+    ? tab.value.document.request
+    : null
+})
 
 const openReqRenameModal = (tabID?: string) => {
   if (tabID) {
     const tab = tabs.getTabRef(tabID)
+
+    if (tab.value.document.type !== "request") return
+
     reqName.value = tab.value.document.request.name
     renameTabID.value = tabID
   } else {
-    reqName.value = tabs.currentActiveTab.value.document.request.name
+    const { id, document } = tabs.currentActiveTab.value
+
+    if (document.type !== "request") return
+
+    reqName.value = document.request.name
+    renameTabID.value = id
   }
   showRenamingReqNameModal.value = true
 }
 
 const renameReqName = () => {
   const tab = tabs.getTabRef(renameTabID.value ?? currentTabID.value)
-  if (tab.value) {
+  if (tab.value && tab.value.document.type === "request") {
     tab.value.document.request.name = reqName.value
     tabs.updateTab(tab.value)
   }
@@ -292,7 +352,7 @@ const onCloseConfirmSaveTab = () => {
  */
 const onResolveConfirmSaveTab = () => {
   if (tabs.currentActiveTab.value.document.saveContext) {
-    invokeAction("request.save")
+    invokeAction("request-response.save")
 
     if (confirmingCloseForTabID.value) {
       tabs.closeTab(confirmingCloseForTabID.value)
@@ -316,7 +376,7 @@ const onSaveModalClose = () => {
 
 const shareTabRequest = (tabID: string) => {
   const tab = tabs.getTabRef(tabID)
-  if (tab.value) {
+  if (tab.value && tab.value.document.type === "request") {
     if (currentUser.value) {
       invokeAction("share.request", {
         request: tab.value.document.request,
@@ -349,21 +409,58 @@ defineActionHandler("rest.request.open", ({ doc }) => {
   tabs.createNewTab(doc)
 })
 
-defineActionHandler("request.rename", openReqRenameModal)
+defineActionHandler("request.rename", () => {
+  if (tabs.currentActiveTab.value.document.type === "request")
+    openReqRenameModal(tabs.currentActiveTab.value.id)
+})
+
 defineActionHandler("tab.duplicate-tab", ({ tabID }) => {
   duplicateTab(tabID ?? currentTabID.value)
 })
+
 defineActionHandler("tab.close-current", () => {
   removeTab(currentTabID.value)
 })
+
 defineActionHandler("tab.close-other", () => {
   tabs.closeOtherTabs(currentTabID.value)
 })
+
 defineActionHandler("tab.open-new", addNewTab)
 
-useService(HeaderInspectorService)
+defineActionHandler("tab.next", () => {
+  tabs.goToNextTab()
+})
+
+defineActionHandler("tab.prev", () => {
+  tabs.goToPreviousTab()
+})
+
+defineActionHandler("tab.switch-to-first", () => {
+  tabs.goToFirstTab()
+})
+
+defineActionHandler("tab.switch-to-last", () => {
+  tabs.goToLastTab()
+})
+
+defineActionHandler("tab.reopen-closed", () => {
+  tabs.reopenClosedTab()
+})
+
+defineActionHandler("tab.mru-switch", () => {
+  tabs.goToMRUTab()
+})
+
+defineActionHandler("tab.mru-switch-reverse", () => {
+  tabs.goToPreviousMRUTab()
+})
+
+useService(RequestInspectorService)
 useService(EnvironmentInspectorService)
 useService(ResponseInspectorService)
+useService(ScriptingInterceptorInspectorService)
+
 for (const inspectorDef of platform.additionalInspectors ?? []) {
   useService(inspectorDef.service)
 }
